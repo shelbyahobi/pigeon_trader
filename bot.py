@@ -10,6 +10,9 @@ PAPER_MODE = config.PAPER_MODE
 RPC_URL = config.BSC_RPC_URL
 web3 = Web3(Web3.HTTPProvider(RPC_URL))
 
+# --- GLOBAL STATE ---
+positions = {}  # {token_address: {'entry_price': float, 'amount': float, 'symbol': str, 'timestamp': float}}
+
 # --- LOGGING SETUP ---
 def log_trade(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -64,7 +67,7 @@ def check_safety(token_address):
         return False, f"CHECK FAILED: {e}"
 
 # --- TRADING LOGIC ---
-def buy_token(token_address):
+def buy_token(token_address, token_symbol="TOKEN"):
     """
     Simulates a buy in PAPER_MODE.
     """
@@ -75,12 +78,50 @@ def buy_token(token_address):
 
     if PAPER_MODE:
         amount_bnb = config.TRADE_AMOUNT_BNB
-        log_trade(f"[PAPER BUY] Bought {token_address} at ${price} USD (Simulated Amount: {amount_bnb} BNB)")
-        # In a real bot, you'd track this position to sell later.
-        # For this simple scanner, we just log the opportunity.
+        log_trade(f"[PAPER BUY] Bought {token_symbol} ({token_address}) at ${price} USD (Simulated Amount: {amount_bnb} BNB)")
+        
+        # Track position
+        positions[token_address] = {
+            'entry_price': price,
+            'amount': amount_bnb,
+            'symbol': token_symbol,
+            'timestamp': time.time()
+        }
         return price
     else:
         log_trade("REAL TRADE NOT IMPLEMENTED YET - SAFETY LOCK")
+
+def monitor_positions():
+    """
+    Checks active positions for take-profit or stop-loss.
+    """
+    if not positions:
+        return
+
+    # Create a copy of keys to modify dict during iteration
+    for token_address in list(positions.keys()):
+        data = positions[token_address]
+        current_price = get_token_price(token_address)
+        
+        if not current_price:
+            continue
+
+        entry_price = data['entry_price']
+        symbol = data['symbol']
+        
+        # Calculate performance
+        multiplier = current_price / entry_price
+        
+        # Take Profit: 2x (2.0) | Stop Loss: -20% (0.8)
+        if multiplier >= 2.0:
+            log_trade(f"[PAPER SELL] TAKE PROFIT: {symbol} at ${current_price} ({multiplier:.2f}x)")
+            del positions[token_address]
+        elif multiplier <= 0.8:
+            log_trade(f"[PAPER SELL] STOP LOSS: {symbol} at ${current_price} ({multiplier:.2f}x)")
+            del positions[token_address]
+        # else:
+        #     # Optional: Log status every now and then? warning: spammy
+        #     pass
 
 # --- MAIN SCANNER ---
 def scan_and_trade():
@@ -99,48 +140,92 @@ def scan_and_trade():
     # OR we can just fetch some trending tokens to test the logic.
     
     # DEMO: Fetch some trending tokens from DexScreener to 'simulate' finding them
-    try:
-        # This endpoint fetches pairs. Use with a search query or just specific tokens for test.
-        # Let's search for "PEPE" just to get some list of tokens to check safety on as a demo.
-        # DEMO: Fetch WBNB pairs to guarantee we get BSC tokens for the test
-        url = f"{config.DEXSCREENER_API_URL}{config.WBNB_ADDRESS}" 
-        response = requests.get(url)
-        data = response.json()
-        
-        if not data.get("pairs"):
-             log_trade("No tokens found in scan.")
-             return
+    # Updated Scanner with Filters
+    while True:
+        try:
+            # User defined filters
+            params = {
+                "q": "WBNB", # Search for pairs with WBNB
+                # Note: DexScreener search API is a bit limited, strict key=value filtering 
+                # might need to happen post-fetch or via specific endpoint if documented.
+                # However, the user provided a 'search' style URL pattern.
+                # Let's try to construct a search query that implies some order if possible, 
+                # but DexScreener /search/ mainly takes 'q'. 
+                # We will fetch results and FILTER MANUALLY for liquidity/volume to be sure.
+            }
+            
+            # Using the search endpoint to find WBNB pairs specifically
+            url = f"{config.DEXSCREENER_SEARCH}WBNB"
+            # Add a timestamp to avoid caching
+            url += f"&ts={int(time.time())}"
+            
+            response = requests.get(url)
+            data = response.json()
+            
+            if not data.get("pairs"):
+                 log_trade("No tokens found in scan.")
+                 time.sleep(10)
+                 continue # Wait and retry
 
-        log_trade(f"Found {len(data['pairs'])} pairs. Scanning top 20 for BSC...")
-        for i, pair in enumerate(data['pairs'][:20]):
-            # Filter for BSC chain only
-            if pair.get('chainId') != 'bsc':
-                continue
+            pairs = data['pairs']
+            log_trade(f"Found {len(pairs)} pairs. Filtering...")
+            
+            filtered_count = 0
+            
+            for pair in pairs:
+                # 1. Platform/Chain Filter
+                if pair.get('chainId') != 'bsc':
+                    continue
+                    
+                # 2. Liquidity Filter (> $10k)
+                liquidity = pair.get('liquidity', {}).get('usd', 0)
+                if liquidity < 10000:
+                    continue
+                    
+                # 3. Volume Filter (> $5k)
+                volume = pair.get('volume', {}).get('h24', 0)
+                if volume < 5000:
+                    continue
 
-            token_address = pair['baseToken']['address']
-            token_symbol = pair['baseToken']['symbol']
-            
-            log_trade(f"Analyzing {token_symbol} ({token_address})...")
-            
-            # 1. Safety Check
-            is_safe, reason = check_safety(token_address)
-            if not is_safe:
-                log_trade(f"SKIPPING {token_symbol}: {reason}")
-                continue
-            if not is_safe:
-                log_trade(f"SKIPPING {token_symbol}: {reason}")
-                continue
-            
-            log_trade(f"SAFETY PASS: {token_symbol} is marked safe.")
-            
-            # 2. Buy (Paper)
-            buy_token(token_address)
-            
-            # Wait a bit between checks to not spam
-            time.sleep(2)
+                token_address = pair['baseToken']['address']
+                token_symbol = pair['baseToken']['symbol']
+                
+                # Avoid re-buying if we already hold it
+                if token_address in positions:
+                    continue
+                
+                log_trade(f"Analyzing {token_symbol} ({token_address}) | Liq: ${liquidity} | Vol: ${volume}")
+                
+                # 4. Safety Check
+                is_safe, reason = check_safety(token_address)
+                if not is_safe:
+                    # log_trade(f"SKIPPING {token_symbol}: {reason}") # Reduce spam
+                    continue
+                
+                log_trade(f"SAFETY PASS: {token_symbol} is marked safe. Buying...")
+                
+                # 5. Buy (Paper)
+                buy_token(token_address, token_symbol)
+                filtered_count += 1
+                
+                # Limit to buying a few per scan loop to avoid blowing up limits
+                if filtered_count >= 5:
+                    break
+                
+                time.sleep(1)
 
-    except Exception as e:
-        log_trade(f"Scan loop error: {e}")
+            # Monitor positions after the scan
+            log_trade(f"Scan complete. Monitoring {len(positions)} positions...")
+            # Simple loop to monitor for a bit (e.g. 1 minute) before rescanning
+            # in a real bot this would be async or a separate thread.
+            # For this script, we'll just check once per main loop iteration.
+            monitor_positions()
+            
+            time.sleep(60) # Wait 60s before next scan to mimic a regular interval
+
+        except Exception as e:
+            log_trade(f"Scan loop error: {e}")
+            time.sleep(10)
 
 if __name__ == "__main__":
     if web3.is_connected():
