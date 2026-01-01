@@ -1,0 +1,13 @@
+[2026-01-01 23:39:05] --- STRATEGIC BOT STARTED ---
+[2026-01-01 23:39:05] Monitoring: []
+[2026-01-01 23:39:05] Strategy: AAMR (Adaptive Mean Reversion)
+[2026-01-01 23:39:05] Updating watchlist via Screener...
+[2026-01-01 23:41:44] --- STRATEGIC BOT STARTED ---
+[2026-01-01 23:41:44] Monitoring: []
+[2026-01-01 23:41:44] Strategy: AAMR (Adaptive Mean Reversion)
+[2026-01-01 23:41:44] Updating watchlist via Screener...
+[2026-01-01 23:48:21] Watchlist updated: 3 tokens. ['LINK', 'FET', 'AB']
+[2026-01-01 23:48:21] Running scheduled check...
+[2026-01-01 23:48:26] Rate limited fetching history for fetch-ai. Skipping.
+[2026-01-01 23:48:26] Rate limited fetching history for newton-project. Skipping.
+[2026-01-01 23:48:26] Check complete.

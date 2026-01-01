@@ -4,18 +4,20 @@ import requests
 import json
 import os
 from datetime import datetime
-from datetime import datetime
+import pandas as pd
 import config
-import screener  # Integration
+import screener
+from strategies.aamr import AAMRStrategy
 
 # --- CONFIG ---
 # Real tokens to monitor
 TOKENS = {} # Will be populated by dynamic screener
 
-# Strategy Settings
-DIP_THRESHOLD = 0.50 # Buy if Price < 50% of ATH
-TAKE_PROFIT = 0.20   # Sell if Price > +20% from Entry
-STOP_LOSS = 0.20     # Sell if Price < -20% from Entry
+
+# Initialize Strategy
+strategy = AAMRStrategy()
+
+# --- LOGGING & ALERTING ---
 
 STATE_FILE = "strategic_state.json"
 LOG_FILE = "strategic_log.txt"
@@ -76,6 +78,27 @@ def fetch_market_data(token_ids):
         log_msg(f"Error fetching data: {e}")
         return None
 
+def fetch_candle_history(token_id):
+    """Fetch 250 days of history for AAMR Strategy"""
+    url = f"https://api.coingecko.com/api/v3/coins/{token_id}/market_chart"
+    params = {'vs_currency': 'usd', 'days': 250, 'interval': 'daily'}
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            df = pd.DataFrame(data['prices'], columns=['timestamp', 'price'])
+            df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('date', inplace=True)
+            return df
+        # Rate limit handling
+        elif r.status_code == 429:
+            log_msg(f"Rate limited fetching history for {token_id}. Skipping.")
+    except Exception as e:
+        log_msg(f"Error fetching candles for {token_id}: {e}")
+    return None
+
+# --- WATCHLIST MANAGEMENT ---
+
 # --- WATCHLIST MANAGEMENT ---
 def update_watchlist():
     log_msg("Updating watchlist via Screener...")
@@ -102,82 +125,66 @@ def run_job():
     if not market_data:
         return
 
+    # Process each token
     for token_id, token_symbol in TOKENS.items():
-        if token_id not in market_data:
+        if token_id not in market_data: continue
+            
+        price = market_data[token_id]['price']
+        
+        # 1. Fetch History (Expensive call - do carefully)
+        # We need this for AAMR signals
+        df_hist = fetch_candle_history(token_id)
+        if df_hist is None or len(df_hist) < 200:
             continue
             
-        data = market_data[token_id]
-        price = data['price']
-        ath = data['ath']
-        
-        # 1. Manage Active Position
+        # 2. Get AAMR Signal
+        current_pos_price = None
         if token_id in state['positions']:
+            current_pos_price = state['positions'][token_id]['entry_price']
+            
+        signal = strategy.get_signal(df_hist, current_pos_price)
+        
+        # 3. Execute
+        if signal == 'BUY' and token_id not in state['positions']:
+            # BUY LOGIC
+            bet_size = 100.0
+            if state['cash'] >= bet_size:
+                amount = bet_size / price
+                state['cash'] -= bet_size
+                state['positions'][token_id] = {
+                    'entry_price': price,
+                    'amount': amount,
+                    'timestamp': time.time()
+                }
+                send_alert(f"BUY {token_symbol} (AAMR) at ${price:.2f}")
+
+        elif signal == 'SELL' and token_id in state['positions']:
+            # SELL LOGIC
             pos = state['positions'][token_id]
-            entry_price = pos['entry_price']
-            amount = pos['amount']
+            proceeds = pos['amount'] * price
+            pnl_pct = (price - pos['entry_price']) / pos['entry_price']
             
-            pnl_pct = (price - entry_price) / entry_price
+            state['cash'] += proceeds
+            del state['positions'][token_id]
+            send_alert(f"SELL {token_symbol} at ${price:.2f} ({pnl_pct*100:.1f}%). Cash: ${state['cash']:.2f}")
             
-            # Check Exit Conditions
-            if pnl_pct >= TAKE_PROFIT:
-                # TAKE PROFIT
-                proceeds = amount * price
-                profit = proceeds - (amount * entry_price)
-                state['cash'] += proceeds
-                del state['positions'][token_id]
-                
-                msg = f"SOLD {token_symbol} (TP). Entry: ${entry_price:.2f}, Exit: ${price:.2f} (+{pnl_pct*100:.1f}%). Cash: ${state['cash']:.2f}"
-                send_alert(msg)
-                
-            elif pnl_pct <= -STOP_LOSS:
-                # STOP LOSS
-                proceeds = amount * price
-                loss = (amount * entry_price) - proceeds
-                state['cash'] += proceeds
-                del state['positions'][token_id]
-                
-                msg = f"SOLD {token_symbol} (SL). Entry: ${entry_price:.2f}, Exit: ${price:.2f} ({pnl_pct*100:.1f}%). Cash: ${state['cash']:.2f}"
-                send_alert(msg)
-                
-            # else: Hold
-
-        # 2. Look for New Entry (if no position)
-        else:
-            # Check Dip Buy Condition: Price < 50% of ATH
-            if price < (ath * DIP_THRESHOLD):
-                # Valid setup
-                
-                # Check if we have cash (Paper Logic: Invest fixed $100 per trade)
-                bet_size = 100.0
-                if state['cash'] >= bet_size:
-                    amount_to_buy = bet_size / price
-                    state['cash'] -= bet_size
-                    state['positions'][token_id] = {
-                        'entry_price': price,
-                        'amount': amount_to_buy,
-                        'timestamp': time.time()
-                    }
-                    
-                    msg = f"BOUGHT {token_symbol} (Dip). Price: ${price:.2f} (ATH: ${ath:.2f}). Invested: ${bet_size}"
-                    send_alert(msg)
-                else:
-                    # Not enough cash, maybe log once in a while
-                    pass
-
+        # Rate limit safety
+        time.sleep(2)
+        
     save_state(state)
     log_msg("Check complete.")
 
 def main():
     log_msg("--- STRATEGIC BOT STARTED ---")
     log_msg(f"Monitoring: {list(TOKENS.values())}")
-    log_msg(f"Strategies: Dip Buy (<{DIP_THRESHOLD*100}% ATH), TP (+{TAKE_PROFIT*100}%), SL (-{STOP_LOSS*100}%)")
+    log_msg(f"Strategy: AAMR (Adaptive Mean Reversion)")
     
     # Run once immediately
     update_watchlist()
     run_job()
     
-    # Schedule every 15 minutes
-    schedule.every(15).minutes.do(run_job)
+    # Schedule every hour (AAMR uses daily/hourly trends, frequent checks not needed)
+    schedule.every(1).hours.do(run_job)
     # Schedule weekly watchlist update (every Monday)
     schedule.every().monday.do(update_watchlist)
     
