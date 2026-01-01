@@ -4,15 +4,13 @@ import requests
 import json
 import os
 from datetime import datetime
+from datetime import datetime
 import config
+import screener  # Integration
 
 # --- CONFIG ---
 # Real tokens to monitor
-TOKENS = {
-    'pancakeswap-token': 'CAKE',
-    'alpaca-finance': 'ALPACA',
-    'binancecoin': 'BNB'
-}
+TOKENS = {} # Will be populated by dynamic screener
 
 # Strategy Settings
 DIP_THRESHOLD = 0.50 # Buy if Price < 50% of ATH
@@ -77,6 +75,19 @@ def fetch_market_data(token_ids):
     except Exception as e:
         log_msg(f"Error fetching data: {e}")
         return None
+
+# --- WATCHLIST MANAGEMENT ---
+def update_watchlist():
+    log_msg("Updating watchlist via Screener...")
+    candidates = screener.screen_candidates() # Returns list of dicts
+    
+    new_tokens = {}
+    for c in candidates:
+        new_tokens[c['id']] = c['symbol']
+        
+    global TOKENS
+    TOKENS = new_tokens
+    log_msg(f"Watchlist updated: {len(TOKENS)} tokens. {list(TOKENS.values())}")
 
 # --- BOT LOGIC ---
 def run_job():
@@ -162,10 +173,13 @@ def main():
     log_msg(f"Strategies: Dip Buy (<{DIP_THRESHOLD*100}% ATH), TP (+{TAKE_PROFIT*100}%), SL (-{STOP_LOSS*100}%)")
     
     # Run once immediately
+    update_watchlist()
     run_job()
     
     # Schedule every 15 minutes
     schedule.every(15).minutes.do(run_job)
+    # Schedule weekly watchlist update (every Monday)
+    schedule.every().monday.do(update_watchlist)
     
     while True:
         schedule.run_pending()
