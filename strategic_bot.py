@@ -10,6 +10,7 @@ import screener
 import gc
 from strategies.aamr import AAMRStrategy
 from strategies.echo import EchoStrategy
+from strategies.cvh import CVHStrategy
 
 # --- CONFIG ---
 # Real tokens to monitor
@@ -22,6 +23,8 @@ strategy = AAMRStrategy()
 def get_strategy_for_mode(mode):
     if mode == 'echo':
         return EchoStrategy()
+    elif mode == 'cvh':
+        return CVHStrategy()
     return AAMRStrategy()
 
 # --- LOGGING & ALERTING ---
@@ -281,6 +284,8 @@ def run_job(mode="standard"):
                 risk_cap = 0.06 # Flash (6% - High Risk Strategy)
             elif mode == 'echo':
                 risk_cap = 0.05 # Echo (5% - Expert Requirement)
+            elif mode == 'cvh':
+                risk_cap = 0.01 # CVH (1% - Expert "VC Style" sizing)
                 
             bet_size = calculate_kelly_bet(state['cash'], max_risk_pct=risk_cap)
             
@@ -313,13 +318,24 @@ def run_job(mode="standard"):
     save_state(state)
     log_msg("Check complete.")
 
+def run_fleet():
+    """Runs the 95/5 Split Portfolio"""
+    log_msg(">>> EXECUTING FLEET: 95% ECHO | 5% CVH <<<")
+    # Run Echo (Primary)
+    run_job(mode="echo")
+    # Run CVH (Side Bet)
+    run_job(mode="cvh")
+    log_msg(">>> FLEET EXECUTION COMPLETE <<<")
+
 import sys
 
 def main():
     log_msg("--- STRATEGIC BOT STARTED ---")
     
-    # Check for Flash Crash Mode
+    # Check for Mode
     MODE = "standard"
+    IS_FLEET = False
+    
     if len(sys.argv) > 1:
         arg = sys.argv[1]
         if arg == "flash":
@@ -328,16 +344,21 @@ def main():
         elif arg == "echo":
             MODE = "echo"
             log_msg("!!! RUNNING IN ECHO MODE (ELR) !!!")
+        elif arg == "mixed":
+            IS_FLEET = True
+            log_msg("!!! RUNNING IN MIXED FLEET MODE (95/5) !!!")
         
     log_msg(f"Monitoring: {list(TOKENS.values())}")
-    log_msg(f"Strategy: AAMR (Adaptive Mean Reversion)")
     
     # Run once immediately
     update_watchlist()
-    run_job(MODE)
+    if IS_FLEET:
+        run_fleet()
+        schedule.every(1).hours.do(run_fleet)
+    else:
+        run_job(MODE)
+        schedule.every(1).hours.do(run_job, mode=MODE)
     
-    # Schedule every hour (AAMR uses daily/hourly trends, frequent checks not needed)
-    schedule.every(1).hours.do(run_job, mode=MODE)
     # Schedule weekly watchlist update (every Monday)
     schedule.every().monday.do(update_watchlist)
     
