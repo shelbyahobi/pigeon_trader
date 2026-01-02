@@ -12,6 +12,8 @@ class AAMRStrategy(BaseStrategy):
         self.rsi_sell = rsi_sell
         self.vol_threshold = vol_threshold
         
+        return df
+
     def calculate_indicators(self, df):
         # SMA
         df['sma_fast'] = df['price'].rolling(window=self.fast_sma).mean()
@@ -27,6 +29,17 @@ class AAMRStrategy(BaseStrategy):
         # Volatility (Standard Deviation of % returns over 24h)
         df['returns'] = df['price'].pct_change()
         df['volatility'] = df['returns'].rolling(window=24).std() # Annualized or raw
+        
+        # --- EXPERT: Bollinger Bands (20, 2) ---
+        df['bb_mid'] = df['price'].rolling(window=20).mean()
+        df['bb_std'] = df['price'].rolling(window=20).std()
+        df['bb_lower'] = df['bb_mid'] - (2.0 * df['bb_std'])
+        df['bb_upper'] = df['bb_mid'] + (2.0 * df['bb_std'])
+        
+        # --- EXPERT: ATR (Approximate using Close-to-Close) ---
+        # Since we might not have High/Low, we use abs(diff)
+        df['tr'] = df['price'].diff().abs()
+        df['atr'] = df['tr'].rolling(window=14).mean()
         
         return df
 
@@ -134,10 +147,22 @@ class AAMRStrategy(BaseStrategy):
         
         # --- BUY SIGNAL ---
         if current_position_avg_price is None:
-            if is_bull_trend and is_oversold:
-                return 'BUY'
-            if not is_bull_trend and high_vol and row['rsi'] < self.rsi_buy:
-                return 'BUY'
+            
+            # 1. FLASH MODE (Expert Entry)
+            if mode == 'flash':
+                # Entry: Price < Lower Bollinger Band (2.0) AND Volatilty Spike
+                # We interpret "Volatilty Spike" as ATR > 3% of price (High noise)
+                current_atr_pct = row['atr'] / curr_price if curr_price > 0 else 0
+                
+                if curr_price < row['bb_lower'] and current_atr_pct > 0.03:
+                    return 'BUY'
+                    
+            # 2. STANDARD MODE (AAMR Entry)
+            else:
+                if is_bull_trend and is_oversold:
+                    return 'BUY'
+                if not is_bull_trend and high_vol and row['rsi'] < self.rsi_buy:
+                    return 'BUY'
                 
         # --- SELL SIGNAL ---
         elif current_position_avg_price is not None:
@@ -145,11 +170,17 @@ class AAMRStrategy(BaseStrategy):
             
             # --- FLASH CRASH EXIT (Trailing Stop) ---
             if mode == 'flash' and highest_price_since_entry:
-                # Calculate drop from peak
-                drop_from_peak = (highest_price_since_entry - curr_price) / highest_price_since_entry
+                # Expert Exit: Peak - (2.0 * ATR)
+                # If ATR is missing, fallback to 10%
+                current_atr = row['atr']
+                if pd.isna(current_atr) or current_atr == 0:
+                    stop_distance = highest_price_since_entry * 0.10
+                else:
+                    stop_distance = 2.0 * current_atr
                 
-                # Trailing Stop: Sell if dropped 10% from peak
-                if drop_from_peak >= 0.10:
+                stop_price = highest_price_since_entry - stop_distance
+                
+                if curr_price < stop_price:
                     return 'SELL'
                     
                 # Hard Stop Loss checking is below (acts as backup)
