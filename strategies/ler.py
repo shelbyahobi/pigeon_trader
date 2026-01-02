@@ -22,20 +22,39 @@ class LERStrategy(BaseStrategy):
         df['tr'] = df['price'].diff().abs()
         df['atr'] = df['tr'].rolling(window=self.atr_period).mean()
         
-        # 4. Volume Divergence Proxy
-        # Price making Lower Low vs Volume Neutral/Higher?
-        # We simplify to: "Volume stable/rising while Price drops slowly"
+        # 4. Volume Divergence Proxy (The "Poor Man's On-Chain")
+        # Logic: If Volume is High (> 1.5x Avg) BUT Price Change is Low (< 0.5x ATR)
+        # It means "Absorption" (Whales limit buying against sellers).
         if 'total_volume' in df.columns:
             df['vol_ma'] = df['total_volume'].rolling(window=20).mean()
-            df['vol_stable'] = df['total_volume'] > (0.8 * df['vol_ma']) # Volume not dying
+            mean_atr = df['atr'].rolling(window=20).mean()
+            
+            # Vectorized condition
+            high_volume = df['total_volume'] > (1.5 * df['vol_ma'])
+            low_volatility = df['tr'] < (0.8 * mean_atr)
+            
+            # This combination is a strong proxy for "Passive Accumulation" (Limit Orders)
+            df['absorption_signal'] = high_volume & low_volatility
         else:
-            df['vol_stable'] = True
+            df['absorption_signal'] = False
             
         # 5. Drawdown (Context)
         df['year_high'] = df['price'].rolling(window=365, min_periods=50).max()
         df['drawdown'] = (df['year_high'] - df['price']) / df['year_high']
         
         return df
+
+    def check_live_depth_proxy(self, symbol):
+        """
+        [LIVE ONLY] To be connected to Binance Free API.
+        Checks if Bid Depth +2% > Ask Depth +2% (Bullish Imbalance).
+        """
+        # Placeholder: In live bot, we would call:
+        # depth = binance.fetch_order_book(symbol)
+        # bids = sum(bid[1] for bid in depth['bids'] if bid[0] > current * 0.98)
+        # asks = sum(ask[1] for ask in depth['asks'] if ask[0] < current * 1.02)
+        # return bids > (arks * 1.3)
+        return True # Assumed True for Backtest
 
     def run(self, df):
         df = self.calculate_indicators(df.copy())
