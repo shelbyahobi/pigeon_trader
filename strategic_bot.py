@@ -148,6 +148,57 @@ def calculate_kelly_bet(cash, win_prob=0.55, win_loss_ratio=1.5, max_risk_pct=0.
     
     return bet_amount
 
+# --- CONTEXT DATA (Expert Hardening) ---
+def fetch_btc_trend():
+    """Returns True if BTC > 21-Week EMA (Bull Regime)"""
+    try:
+        # Fetch 150 days of BTC (approx 21 weeks)
+        url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
+        params = {'vs_currency': 'usd', 'days': 160, 'interval': 'daily'}
+        r = requests.get(url, params=params, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            prices = [p[1] for p in data['prices']]
+            if len(prices) < 147: return True # Default to permissible if data fail
+            
+            # Calculate 21-Week EMA (approx 147 days)
+            # EMA_today = (Price * k) + (EMA_yesterday * (1-k))
+            # Pandas is heavy, let's use SMA as close proxy for speed or simple pandas
+            s = pd.Series(prices)
+            ema_21w = s.ewm(span=147, adjust=False).mean().iloc[-1]
+            current = prices[-1]
+            
+            log_msg(f"BTC Context: ${current:.0f} vs 21wEMA ${ema_21w:.0f} -> {'BULL' if current > ema_21w else 'BEAR'}")
+            return current > ema_21w
+    except Exception as e:
+        log_msg(f"Error fetching BTC trend: {e}")
+    return True # Default permisssive
+
+def fetch_funding_rate(symbol):
+    """Returns True if Funding is Negative or Neutral (Not Overheated)"""
+    # Map Symbol to Binance Ticker (e.g. PEPE -> 1000PEPEUSDT or PEPEUSDT)
+    # This is tricky without a mapping.
+    # We will try standard 'SYMBOL'+'USDT'
+    try:
+        binance_symbol = f"{symbol.upper()}USDT"
+        url = "https://fapi.binance.com/fapi/v1/premiumIndex"
+        params = {'symbol': binance_symbol}
+        r = requests.get(url, params=params, timeout=5)
+        
+        if r.status_code == 200:
+            data = r.json()
+            # If symbol invalid, it returns error code usually
+            if 'lastFundingRate' in data:
+                fr = float(data['lastFundingRate'])
+                # Expert Rule: Funding < 0.01% (Neutral/Negative)
+                # If > 0.01% -> Retail FOMO -> Danger
+                is_safe = fr < 0.0001
+                log_msg(f"Funding Context {binance_symbol}: {fr:.6f} -> {'SAFE' if is_safe else 'DANGER'}")
+                return is_safe
+    except:
+        pass # Many coins don't have perps
+    return True # Default permissive
+
 
 
 # --- BOT LOGIC ---
@@ -172,6 +223,10 @@ def run_job(mode="standard"):
     strategy = get_strategy_for_mode(mode)
 
     # Process each token
+    global_btc_context = True # Default
+    if mode == 'echo':
+        global_btc_context = fetch_btc_trend()
+
     for token_id, token_symbol in TOKENS.items():
         if token_id not in market_data: continue
             
@@ -202,7 +257,15 @@ def run_job(mode="standard"):
                 
             highest_price = pos['highest_price']
             
-        signal = strategy.get_signal(df_hist, current_pos_price, highest_price, mode)
+        # Prepare Context (Only needed for Echo usually, but safe to gather)
+        ctx = {}
+        if mode == 'echo':
+            # Check Global Regime once per loop? No, inside loop for now is fine but inefficient.
+            # Optimization: Move BTC check outside loop? Yes.
+            ctx['btc_bullish'] = global_btc_context
+            ctx['funding_ok'] = fetch_funding_rate(token_symbol)
+            
+        signal = strategy.get_signal(df_hist, current_pos_price, highest_price, mode, context=ctx)
         
         # 3. Execute
         if signal == 'BUY' and token_id not in state['positions']:
@@ -210,6 +273,10 @@ def run_job(mode="standard"):
             # Use Kelly Criterion for sizing
             # EXPERT SAFETY: Cap risk based on mode
             risk_cap = 0.12 # Standard (12%)
+            if mode == 'flash':
+                risk_cap = 0.06 # Flash (6% - High Risk Strategy)
+            elif mode == 'echo':
+                risk_cap = 0.03 # Echo (3% - Hardened Expert Safety)
             if mode == 'flash':
                 risk_cap = 0.06 # Flash (6% - High Risk Strategy)
             elif mode == 'echo':
