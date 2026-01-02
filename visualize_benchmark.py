@@ -4,6 +4,7 @@ import os
 import glob
 from strategies.aamr import AAMRStrategy
 from strategies.phoenix import PhoenixStrategy
+from strategies.echo import EchoStrategy
 
 # Silence warnings
 pd.options.mode.chained_assignment = None 
@@ -81,35 +82,43 @@ def generate_comparison_plot():
 
     strat_aamr = AAMRStrategy()
     strat_phoenix = PhoenixStrategy()
+    strat_echo = EchoStrategy()
     
-    plt.figure(figsize=(15, 12))
+    plt.figure(figsize=(15, 15))
     
     # Plot layout
+    # Add SOL and PEPE if they exist
+    full_symbols = ['CAKE', 'BNB', 'ALPACA', 'SOL', 'PEPE']
+    # Filter only those in data
+    symbols = [s for s in full_symbols if s in data]
+    
     for i, symbol in enumerate(symbols):
         if symbol not in data: continue
         
         df = data[symbol]
         
-        # Run 3 Modes
+        # Run 4 Modes
         eq_std = run_backtest_loop(df, strat_aamr, mode='standard')
         eq_flash = run_backtest_loop(df, strat_aamr, mode='flash')
         eq_phoenix = run_phoenix_loop(df, strat_phoenix)
+        eq_echo = run_phoenix_loop(df, strat_echo) # Echo has same 'run' signature as Phoenix
         
         # Subplot
-        plt.subplot(3, 1, i+1)
-        plt.plot(eq_std.index, eq_std, label='Standard (Dip)', color='gray', linestyle='--', alpha=0.7)
-        plt.plot(eq_flash.index, eq_flash, label='Flash (Crash)', color='blue', linewidth=1.5)
-        plt.plot(eq_phoenix.index, eq_phoenix, label='Phoenix (Breakout)', color='red', linewidth=2)
+        plt.subplot(len(symbols), 1, i+1)
+        plt.plot(eq_std.index, eq_std, label='Standard (Dip)', color='gray', linestyle='--', alpha=0.5)
+        plt.plot(eq_flash.index, eq_flash, label='Flash (Crash)', color='blue', linewidth=1.5, alpha=0.7)
+        plt.plot(eq_phoenix.index, eq_phoenix, label='Phoenix (Breakout)', color='red', linewidth=1.5, alpha=0.7)
+        plt.plot(eq_echo.index, eq_echo, label='Echo (Rebound)', color='green', linewidth=2.0)
         plt.plot(df.index, (df['price'] / df['price'].iloc[0]) * 1000, label='Buy & Hold', color='orange', alpha=0.2)
         
-        plt.title(f"{symbol}: Benchmark (Standard vs Flash vs Phoenix)")
-        plt.legend()
+        plt.title(f"{symbol}: Benchmark (Standard vs Flash vs Phoenix vs Echo)")
+        plt.legend(loc='upper left', fontsize='small')
         plt.grid(True, alpha=0.3)
         plt.ylabel("Value ($)")
         
     plt.tight_layout()
-    plt.savefig('benchmark_expert_compare.png')
-    print("Chart saved to benchmark_expert_compare.png")
+    plt.savefig('benchmark_grand_compare.png')
+    print("Chart saved to benchmark_grand_compare.png")
 
 if __name__ == "__main__":
     generate_comparison_plot()
