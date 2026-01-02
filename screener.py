@@ -16,9 +16,10 @@ def get_bnb_tokens():
         'vs_currency': 'usd',
         'category': 'binance-smart-chain',
         'order': 'market_cap_desc',
-        'per_page': 50, # Check top 50 first
+        'per_page': 100, # Check top 100
         'page': 1,
-        'sparkline': 'false'
+        'sparkline': 'false',
+        'price_change_percentage': '30d,200d' # Fetch recent changes
     }
     try:
         response = requests.get(url, params=params, timeout=15)
@@ -80,6 +81,14 @@ def screen_candidates():
         if dip_pct < MIN_DIP_PERCENT:
              # Not dipped enough
              continue
+
+        # 2.5 Recent Crash Check (Flash Crash Strategy)
+        # Check if dropped > 50% in last 30 days (Crash)
+        crash_30d = coin.get('price_change_percentage_30d_in_currency')
+        is_flash_crash = False
+        if crash_30d and crash_30d < -40.0:
+            print(f"  [ALERT] {symbol} is a Flash Crash Candidate! ({crash_30d:.1f}% in 30d)")
+            is_flash_crash = True
              
         # 3. Age Check (Slow - requires Detail Call)
         print(f"Checking details for {symbol} (Dip: {dip_pct:.1f}%)...")
@@ -105,7 +114,8 @@ def screen_candidates():
                     'symbol': symbol,
                     'age_years': age_years,
                     'dip_pct': dip_pct,
-                    'price': current_price
+                    'price': current_price,
+                    'is_flash_crash': is_flash_crash
                 })
                 
                 # IMPORTANT: Sleep to respect free tier (approx 10-30 calls/min)

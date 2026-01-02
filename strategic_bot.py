@@ -112,12 +112,14 @@ def update_watchlist():
     TOKENS = new_tokens
     log_msg(f"Watchlist updated: {len(TOKENS)} tokens. {list(TOKENS.values())}")
 
+
 # --- BOT LOGIC ---
-def run_job():
-    log_msg("Running scheduled check...")
+def run_job(mode="standard"):
+    log_msg(f"Running scheduled check ({mode})...")
     
     state = load_state()
     # Ensure structure: state = {'positions': {token_id: {entry_price, amount}}, 'cash': 1000}
+
     if 'cash' not in state: state['cash'] = 1000.0 # Paper money
     if 'positions' not in state: state['positions'] = {}
     
@@ -172,19 +174,29 @@ def run_job():
         time.sleep(2)
         
     save_state(state)
+    save_state(state)
     log_msg("Check complete.")
+
+import sys
 
 def main():
     log_msg("--- STRATEGIC BOT STARTED ---")
+    
+    # Check for Flash Crash Mode
+    MODE = "standard"
+    if len(sys.argv) > 1 and sys.argv[1] == "flash":
+        MODE = "flash"
+        log_msg("!!! RUNNING IN FLASH CRASH MODE !!!")
+        
     log_msg(f"Monitoring: {list(TOKENS.values())}")
     log_msg(f"Strategy: AAMR (Adaptive Mean Reversion)")
     
     # Run once immediately
     update_watchlist()
-    run_job()
+    run_job(MODE)
     
     # Schedule every hour (AAMR uses daily/hourly trends, frequent checks not needed)
-    schedule.every(1).hours.do(run_job)
+    schedule.every(1).hours.do(run_job, mode=MODE)
     # Schedule weekly watchlist update (every Monday)
     schedule.every().monday.do(update_watchlist)
     
