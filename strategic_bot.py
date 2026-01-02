@@ -212,6 +212,8 @@ def run_job(mode="standard"):
             risk_cap = 0.12 # Standard (12%)
             if mode == 'flash':
                 risk_cap = 0.06 # Flash (6% - High Risk Strategy)
+            elif mode == 'echo':
+                risk_cap = 0.05 # Echo (5% - Expert Requirement)
                 
             bet_size = calculate_kelly_bet(state['cash'], max_risk_pct=risk_cap)
             
