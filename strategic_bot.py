@@ -130,7 +130,8 @@ def update_watchlist():
             new_meta[c['id']] = {
                 'dev_score': c.get('dev_score', 0),
                 'comm_score': c.get('comm_score', 0),
-                'liq_score': c.get('liq_score', 0)
+                'liq_score': c.get('liq_score', 0),
+                'categories': c.get('categories', [])
             }
             
         TOKENS = new_tokens

@@ -178,6 +178,7 @@ def screen_candidates():
                 dev_score = details.get('developer_score', 0)
                 comm_score = details.get('community_score', 0)
                 liq_score = details.get('liquidity_score', 0)
+                cats = details.get('categories', [])
                 
                 screened_list.append({
                     'id': coin_id,
@@ -188,7 +189,8 @@ def screen_candidates():
                     'is_flash_crash': is_flash_crash,
                     'dev_score': dev_score,
                     'comm_score': comm_score,
-                    'liq_score': liq_score
+                    'liq_score': liq_score,
+                    'categories': cats
                 })
                 
                 # IMPORTANT: Sleep to respect free tier (approx 10-30 calls/min)
