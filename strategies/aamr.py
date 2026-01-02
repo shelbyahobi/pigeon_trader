@@ -11,8 +11,6 @@ class AAMRStrategy(BaseStrategy):
         self.rsi_buy = rsi_buy
         self.rsi_sell = rsi_sell
         self.vol_threshold = vol_threshold
-        
-        return df
 
     def calculate_indicators(self, df):
         # SMA
