@@ -107,7 +107,7 @@ class AAMRStrategy(BaseStrategy):
         roi = ((equity_curve[-1] - self.capital) / self.capital) * 100
         return roi, pd.Series(equity_curve, index=df.index)
 
-    def get_signal(self, df, current_position_avg_price=None):
+    def get_signal(self, df, current_position_avg_price=None, highest_price_since_entry=None, mode="standard"):
         """
         Analyze the LATEST row of the dataframe to generate a live signal.
         Returns: 'BUY', 'SELL', or 'HOLD'
@@ -125,7 +125,7 @@ class AAMRStrategy(BaseStrategy):
         is_bull_trend = row['sma_fast'] > row['sma_slow']
         is_oversold = row['rsi'] < self.rsi_buy
         
-        # Use more responsive RSI for Bull Trend (Aggressive entry)
+        # Use more responsive RSI for Bull Trend or Flash Mode
         if is_bull_trend:
             is_oversold = row['rsi'] < 55
             
@@ -143,21 +143,34 @@ class AAMRStrategy(BaseStrategy):
         elif current_position_avg_price is not None:
             pct_change = (curr_price - current_position_avg_price) / current_position_avg_price
             
-            # 1. Take Profit
-            if is_bull_trend:
-                # Let it run! Only sell if extreme or huge gain
-                if pct_change > 0.50 or is_extreme_overbought:
+            # --- FLASH CRASH EXIT (Trailing Stop) ---
+            if mode == 'flash' and highest_price_since_entry:
+                # Calculate drop from peak
+                drop_from_peak = (highest_price_since_entry - curr_price) / highest_price_since_entry
+                
+                # Trailing Stop: Sell if dropped 10% from peak
+                if drop_from_peak >= 0.10:
                     return 'SELL'
-                if not is_bull_trend: # Trend broke
-                    return 'SELL'
-            else:
-                # Bear Mode: Scalp
-                target = 0.15
-                if high_vol: target = 0.20
-                if pct_change >= target:
-                    return 'SELL'
+                    
+                # Hard Stop Loss checking is below (acts as backup)
+                
+            # --- STANDARD EXIT ---
+            else: 
+                # 1. Take Profit
+                if is_bull_trend:
+                    # Let it run! Only sell if extreme or huge gain
+                    if pct_change > 0.50 or is_extreme_overbought:
+                        return 'SELL'
+                    if not is_bull_trend: # Trend broke
+                        return 'SELL'
+                else:
+                    # Bear Mode: Scalp
+                    target = 0.15
+                    if high_vol: target = 0.20
+                    if pct_change >= target:
+                        return 'SELL'
             
-            # 2. Stop Loss
+            # 2. Hard Stop Loss (Universal Safety Net)
             if pct_change <= -0.10:
                 return 'SELL'
                 

@@ -113,6 +113,35 @@ def update_watchlist():
     TOKENS = new_tokens
     log_msg(f"Watchlist updated: {len(TOKENS)} tokens. {list(TOKENS.values())}")
 
+# --- RISK MANAGEMENT ---
+def calculate_kelly_bet(cash, win_prob=0.55, win_loss_ratio=1.5, max_risk_pct=0.20):
+    """
+    Calculates bet size using Half-Kelly Criterion.
+    f* = (bp - q) / b
+    b = win/loss ratio
+    p = probability of winning
+    q = probability of losing (1-p)
+    """
+    if cash < 10: return 0.0
+    
+    # Kelly Formula
+    q = 1.0 - win_prob
+    f_star = ((win_loss_ratio * win_prob) - q) / win_loss_ratio
+    
+    # Safety: Use Half-Kelly (Crypto is volatile)
+    safe_f = f_star * 0.5
+    
+    # Safety: Hard Cap at 20% of portfolio
+    final_pct = min(max(safe_f, 0.0), max_risk_pct)
+    
+    bet_amount = cash * final_pct
+    
+    # Floor: Don't bet less than $10 (dust)
+    if bet_amount < 10.0: bet_amount = 10.0
+    
+    return bet_amount
+
+
 
 # --- BOT LOGIC ---
 def run_job(mode="standard"):
@@ -146,24 +175,41 @@ def run_job(mode="standard"):
             
         # 2. Get AAMR Signal
         current_pos_price = None
+        highest_price = None
+
         if token_id in state['positions']:
-            current_pos_price = state['positions'][token_id]['entry_price']
+            pos = state['positions'][token_id]
+            current_pos_price = pos['entry_price']
             
-        signal = strategy.get_signal(df_hist, current_pos_price)
+            # --- TRAILING STOP STATE UPDATE ---
+            # Initialize highest_price if missing
+            if 'highest_price' not in pos:
+                pos['highest_price'] = current_pos_price
+            
+            # Update peak if price went up
+            if price > pos['highest_price']:
+                pos['highest_price'] = price
+                
+            highest_price = pos['highest_price']
+            
+        signal = strategy.get_signal(df_hist, current_pos_price, highest_price, mode)
         
         # 3. Execute
         if signal == 'BUY' and token_id not in state['positions']:
             # BUY LOGIC
-            bet_size = 100.0
+            # Use Kelly Criterion for sizing
+            bet_size = calculate_kelly_bet(state['cash'])
+            
             if state['cash'] >= bet_size:
                 amount = bet_size / price
                 state['cash'] -= bet_size
                 state['positions'][token_id] = {
                     'entry_price': price,
+                    'highest_price': price, # Init peak
                     'amount': amount,
                     'timestamp': time.time()
                 }
-                send_alert(f"BUY {token_symbol} (AAMR) at ${price:.2f}")
+                send_alert(f"BUY {token_symbol} ({mode.upper()}) at ${price:.2f} | Size: ${bet_size:.1f}")
 
         elif signal == 'SELL' and token_id in state['positions']:
             # SELL LOGIC
