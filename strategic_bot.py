@@ -7,15 +7,22 @@ from datetime import datetime
 import pandas as pd
 import config
 import screener
+import gc
 from strategies.aamr import AAMRStrategy
+from strategies.echo import EchoStrategy
 
 # --- CONFIG ---
 # Real tokens to monitor
 TOKENS = {} # Will be populated by dynamic screener
 
 
-# Initialize Strategy
+# Initialize Strategy (Default)
 strategy = AAMRStrategy()
+
+def get_strategy_for_mode(mode):
+    if mode == 'echo':
+        return EchoStrategy()
+    return AAMRStrategy()
 
 # --- LOGGING & ALERTING ---
 
@@ -157,9 +164,12 @@ def run_job(mode="standard"):
     if 'cash' not in state: state['cash'] = 1000.0 # Paper money
     if 'positions' not in state: state['positions'] = {}
     
-    market_data = fetch_market_data(list(TOKENS.keys()))
     if not market_data:
         return
+
+    # Select Strategy Class based on Mode
+    global strategy
+    strategy = get_strategy_for_mode(mode)
 
     # Process each token
     for token_id, token_symbol in TOKENS.items():
@@ -226,8 +236,9 @@ def run_job(mode="standard"):
             del state['positions'][token_id]
             send_alert(f"SELL {token_symbol} at ${price:.2f} ({pnl_pct*100:.1f}%). Cash: ${state['cash']:.2f}")
             
-        # Rate limit safety
+        # Rate limit safety & Memory Check
         time.sleep(2)
+        gc.collect()
         
     save_state(state)
     save_state(state)
@@ -240,9 +251,14 @@ def main():
     
     # Check for Flash Crash Mode
     MODE = "standard"
-    if len(sys.argv) > 1 and sys.argv[1] == "flash":
-        MODE = "flash"
-        log_msg("!!! RUNNING IN FLASH CRASH MODE !!!")
+    if len(sys.argv) > 1:
+        arg = sys.argv[1]
+        if arg == "flash":
+            MODE = "flash"
+            log_msg("!!! RUNNING IN FLASH CRASH MODE !!!")
+        elif arg == "echo":
+            MODE = "echo"
+            log_msg("!!! RUNNING IN ECHO MODE (ELR) !!!")
         
     log_msg(f"Monitoring: {list(TOKENS.values())}")
     log_msg(f"Strategy: AAMR (Adaptive Mean Reversion)")
