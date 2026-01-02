@@ -64,7 +64,12 @@ def screen_candidates():
     
     screened_list = []
     
+    # DEBUG: Print sample of first candidate to verify data structure
+    if len(candidates) > 0:
+        print(f"DEBUG SAMPLE: {candidates[0]['symbol']} Keys: {candidates[0].keys()}")
+    
     for coin in candidates:
+
         symbol = coin['symbol'].upper()
         coin_id = coin['id']
         
@@ -89,6 +94,7 @@ def screen_candidates():
         # LOGIC FIX: Pass if (Dip > 50%) OR (Flash Crash)
         if (dip_pct < MIN_DIP_PERCENT) and (not is_flash_crash):
              # Not dipped enough AND not a flash crash
+             # print(f"  [SKIP] {symbol}: Dip {dip_pct:.1f}% too small.") # Uncomment to debug
              continue
              
         # 3. Age Check (Slow - requires Detail Call)
@@ -96,6 +102,7 @@ def screen_candidates():
         details = get_coin_details(coin_id)
         
         if not details:
+            print(f"  [SKIP] {symbol}: No details fetched.")
             continue
             
         genesis_date_str = details.get('genesis_date')
