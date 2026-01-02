@@ -71,7 +71,86 @@ def save_state(state):
         json.dump(state, f, indent=4)
 
 # --- MARKET DATA ---
-# ... (Fetch functions unchanged) ...
+# --- MARKET DATA ---
+def fetch_market_data(token_ids):
+    """
+    Fetches current price and ATH for list of tokens.
+    """
+    ids_str = ",".join(token_ids)
+    url = "https://api.coingecko.com/api/v3/coins/markets"
+    params = {
+        'vs_currency': 'usd',
+        'ids': ids_str
+    }
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        
+        # Convert list to dict keyed by ID
+        market_map = {}
+        if isinstance(data, list):
+            for item in data:
+                market_map[item['id']] = {
+                    'price': item['current_price'],
+                    'ath': item['ath'],
+                    'symbol': item['symbol'].upper()
+                }
+        return market_map
+    except Exception as e:
+        log_msg(f"Error fetching data: {e}")
+        return None
+
+def fetch_candle_history(token_id):
+    """Fetch 250 days of history + Volume + Volatility Proxy"""
+    url = f"https://api.coingecko.com/api/v3/coins/{token_id}/market_chart"
+    params = {'vs_currency': 'usd', 'days': 250, 'interval': 'daily'}
+    
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            
+            # 1. Parse Prices
+            prices = data.get('prices', [])
+            if not prices: return None
+            
+            df = pd.DataFrame(prices, columns=['timestamp', 'price'])
+            
+            # 2. Parse Volumes (Safe Merge)
+            vols = data.get('total_volumes', [])
+            if vols:
+                df_v = pd.DataFrame(vols, columns=['timestamp', 'total_volume'])
+                # Merge logic: CoinGecko lists usually aligned, but safer to merge using timestamp
+                df['total_volume'] = df_v['total_volume'] # Direct assign assumes alignment (99% case)
+                # If lengths differ, we'd need sophisticated merge. For simple bot:
+                if len(df_v) != len(df):
+                    # Minimal alignment attempt
+                    df = pd.merge(df, df_v, on='timestamp', how='left').fillna(0)
+            else:
+                 df['total_volume'] = 0.0
+
+            # 3. Post-Process
+            df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('date', inplace=True)
+            
+            # 4. Proxy High/Low for ATR (Volatility)
+            # Since market_chart only gives daily close, we assume High=Low=Close.
+            # TRUE RANGE will thus be |Close - Close_Prev| (Daily Move).
+            # This is a valid volatility proxy for "Cloud Paper Mode".
+            df['high'] = df['price']
+            df['low'] = df['price']
+            df['open'] = df['price'] # Proxy
+            df['close'] = df['price']
+            
+            return df
+            
+        # Rate limit handling
+        elif r.status_code == 429:
+            log_msg(f"Rate limited fetching history for {token_id}. Skipping.")
+    except Exception as e:
+        log_msg(f"Error fetching candles for {token_id}: {e}")
+    return None
 
 # --- BOT LOGIC ---
 def run_job(mode="echo"):
@@ -134,42 +213,69 @@ def run_job(mode="echo"):
         if signal == 'BUY' and not current_pos:
             # Sizing logic
             pool_cash = pool['cash']
-            risk_cap = 0.05 if mode == 'echo' else 0.02 # 5% Echo, 2% NIA (of their respective pools)
+            risk_cap = 0.05 if mode == 'echo' else 0.10 # 5% Echo, 10% NIA
             
-            # Simple Fixed Sizing for Repair
-            # Echo: 5% of Pool ($700 * 0.05 = $35)
-            # NIA: 10% of Pool ($300 * 0.10 = $30) -> High Conviction
-            if mode == 'nia': risk_cap = 0.10
-            
+            # 1. Enforcement: Max Positions
+            # Prevents 100% drawdown if 20 signals fire at once
+            max_pos = 10 if mode == 'echo' else 5
+            if len(pool['positions']) >= max_pos:
+                continue
+
             bet_size = pool_cash * risk_cap
-            if bet_size < 10: bet_size = 0 # Dust logic
             
-            if bet_size > 0:
-                amount = bet_size / price
-                pool['cash'] -= bet_size
+            # 2. Enforcement: Dust
+            if bet_size < 10: bet_size = 0 
+            
+            # 3. Enforcement: Cash Buffer & Fees
+            # Fee Model: 0.1% Binance + 0.3% Slippage = 0.4% Cost
+            EST_FEE = 0.004
+            gross_cost = bet_size
+            total_cost = gross_cost * (1 + EST_FEE)
+            
+            if bet_size > 0 and pool_cash >= total_cost:
+                amount = gross_cost / price
+                pool['cash'] -= total_cost # Debit Gross + Fees
+                
                 pool['positions'][token_id] = {
                     'entry_price': price,
                     'highest_price': price,
                     'amount': amount,
                     'timestamp': time.time()
                 }
-                log_msg(f"BUY {token_symbol} ({mode}) @ ${price:.2f} Size: ${bet_size:.1f}")
+                log_msg(f"BUY {token_symbol} ({mode}) @ ${price:.2f} Size: ${gross_cost:.1f} Cost: ${total_cost:.2f}")
                 send_alert(f"BUY {token_symbol} ({mode})")
+                
+                # PERSIST IMMEDIATELLY (Race Condition Fix)
+                state[mode] = pool
+                save_state(state)
 
         elif signal == 'SELL' and current_pos:
             amount = current_pos['amount']
-            proceeds = amount * price
-            pnl = (proceeds - (amount * current_pos['entry_price']))
+            gross_proceeds = amount * price
             
-            pool['cash'] += proceeds
+            # Fee Model on Exit
+            EST_FEE = 0.004
+            net_proceeds = gross_proceeds * (1 - EST_FEE)
+            
+            pnl = (net_proceeds - (amount * current_pos['entry_price']))
+            
+            pool['cash'] += net_proceeds
             del pool['positions'][token_id]
-            log_msg(f"SELL {token_symbol} ({mode}) @ ${price:.2f} PnL: ${pnl:.2f}")
+            log_msg(f"SELL {token_symbol} ({mode}) @ ${price:.2f} Net: ${net_proceeds:.2f} PnL: ${pnl:.2f}")
             send_alert(f"SELL {token_symbol} ({mode}) PnL: ${pnl:.2f}")
+            
+            # PERSIST IMMEDIATELLY
+            state[mode] = pool
+            save_state(state)
+            
+        # Update Highest Price Persistence (Race Condition Fix)
+        if current_pos and price > current_pos['highest_price']:
+             # Already updated in memory loop earlier, but need to save to disk
+             # state object is reference to pool, so it's updated
+             save_state(state)
             
         time.sleep(1) # Safety
         
-    state[mode] = pool # Update sub-state
-    save_state(state)
     log_msg(f"Pool {mode.upper()} Finished. Cash: ${pool['cash']:.1f}")
 
 def run_fleet():
