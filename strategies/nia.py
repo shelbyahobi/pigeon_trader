@@ -94,22 +94,14 @@ class NIAStrategy(BaseStrategy):
         # --- BUY LOGIC ---
         else:
             # 1. NON-PRICE DISCOVERY
-            # Signal 1: Dev Score > 50
+            # Signal 1: Dev Score > 50 (CoinGecko)
             dev_score = context.get('dev_score', 0)
             if dev_score < 50: return 'HOLD'
             
-            # Signal 2: Liquidity/Spread
-            is_spread_tightening = row['spread_compression'] < -0.20
-            
-            # Signal 3: Narratice Compressibility (Improvement 3)
-            # Proxy: Has at least one Category tag?
+            # Signal 3: Narratice Compressibility
             categories = context.get('categories', [])
             has_narrative = len(categories) > 0
-            if not has_narrative: return 'HOLD' # "Engineer Coin" (No story)
-            
-            # Signal 4: Attention (Community Score)
-            comm_score = context.get('comm_score', 0)
-            if comm_score < 50: return 'HOLD'
+            if not has_narrative: return 'HOLD'
             
             # 2. ENTRY FILTERS (Anti-FOMO)
             # Tier 1 Watchlist passed (Screener). Now Tier 2 Capital Check.
@@ -123,8 +115,11 @@ class NIAStrategy(BaseStrategy):
             
             if is_deep and is_quiet and is_organic:
                 # Composite Trigger
-                if is_spread_tightening or dev_score > 70:
-                    return 'BUY'
+                # WITHOUT Fake Spread Data:
+                # We rely on Dev Score being "High enough" to differentiate.
+                # If Dev Score > 60 -> BUY.
+                if dev_score > 60:
+                     return 'BUY'
                 
         return 'HOLD'
 

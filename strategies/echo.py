@@ -18,6 +18,8 @@ class EchoStrategy(BaseStrategy):
         df['bb_lower'] = df['bb_mid'] - (self.bb_std * df['bb_std'])
         
         # Bandwidth Rank (Percentile) - "Self-Adjusting Squeeze"
+        # Calculate Rolling Rank (Percentile) of current width vs last 180 days
+        # Use pandas rolling rank
         df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_mid']
         df['bb_width_rank'] = df['bb_width'].rolling(window=180).rank(pct=True)
         
@@ -31,8 +33,9 @@ class EchoStrategy(BaseStrategy):
             # A. Magnitude: > 1.5x Avg (Not 3x)
             df['vol_spike'] = df['total_volume'] > (1.5 * df['vol_ma_7'])
             # B. Trend: Rising for 3 days (Accumulation Build-up)
-            df['vol_rising'] = (df['total_volume'] > df['total_volume'].shift(1)) & \
-                               (df['total_volume'].shift(1) > df['total_volume'].shift(2))
+            # Use iloc[-1] > [-2] > [-3] in logic? No, easier to map here.
+            v = df['total_volume']
+            df['vol_rising'] = (v > v.shift(1)) & (v.shift(1) > v.shift(2))
             
             df['vol_signal'] = df['vol_spike'] & df['vol_rising']
         else:
