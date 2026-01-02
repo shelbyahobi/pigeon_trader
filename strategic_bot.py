@@ -20,6 +20,7 @@ strategy = AAMRStrategy()
 # --- LOGGING & ALERTING ---
 
 STATE_FILE = "strategic_state.json"
+
 LOG_FILE = "strategic_log.txt"
 
 # --- LOGGING & ALERTING ---
@@ -115,7 +116,11 @@ def update_watchlist():
 
 # --- BOT LOGIC ---
 def run_job(mode="standard"):
-    log_msg(f"Running scheduled check ({mode})...")
+    # Separate state files for A/B testing
+    global STATE_FILE
+    STATE_FILE = f"strategic_state_{mode}.json"
+    
+    log_msg(f"Running scheduled check ({mode}) using {STATE_FILE}...")
     
     state = load_state()
     # Ensure structure: state = {'positions': {token_id: {entry_price, amount}}, 'cash': 1000}
