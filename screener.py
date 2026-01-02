@@ -39,8 +39,8 @@ def get_coin_details(coin_id):
         'localization': 'false',
         'tickers': 'false',
         'market_data': 'true',
-        'community_data': 'false',
-        'developer_data': 'false'
+        'community_data': 'true',
+        'developer_data': 'true'
     }
     try:
         response = requests.get(url, params=params, timeout=10)
@@ -173,13 +173,22 @@ def screen_candidates():
             
             if age_years >= MIN_AGE_YEARS:
                 print(f"  [PASS] {symbol}: Age {age_years:.1f}y, Dip {dip_pct:.1f}%, Vol ${coin['total_volume']:,.0f}")
+                
+                # Fetch NIA data metrics
+                dev_score = details.get('developer_score', 0)
+                comm_score = details.get('community_score', 0)
+                liq_score = details.get('liquidity_score', 0)
+                
                 screened_list.append({
                     'id': coin_id,
                     'symbol': symbol,
                     'age_years': age_years,
                     'dip_pct': dip_pct,
                     'price': current_price,
-                    'is_flash_crash': is_flash_crash
+                    'is_flash_crash': is_flash_crash,
+                    'dev_score': dev_score,
+                    'comm_score': comm_score,
+                    'liq_score': liq_score
                 })
                 
                 # IMPORTANT: Sleep to respect free tier (approx 10-30 calls/min)

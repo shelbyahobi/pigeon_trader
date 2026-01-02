@@ -10,7 +10,7 @@ import screener
 import gc
 from strategies.aamr import AAMRStrategy
 from strategies.echo import EchoStrategy
-from strategies.cvh import CVHStrategy
+from strategies.nia import NIAStrategy
 
 # --- CONFIG ---
 # Real tokens to monitor
@@ -23,8 +23,8 @@ strategy = AAMRStrategy()
 def get_strategy_for_mode(mode):
     if mode == 'echo':
         return EchoStrategy()
-    elif mode == 'cvh':
-        return CVHStrategy()
+    elif mode == 'nia':
+        return NIAStrategy()
     return AAMRStrategy()
 
 # --- LOGGING & ALERTING ---
@@ -111,17 +111,33 @@ def fetch_candle_history(token_id):
 # --- WATCHLIST MANAGEMENT ---
 
 # --- WATCHLIST MANAGEMENT ---
+# Global Metadata Store
+TOKEN_METADATA = {}
+
 def update_watchlist():
     log_msg("Updating watchlist via Screener...")
-    candidates = screener.screen_candidates() # Returns list of dicts
     
-    new_tokens = {}
-    for c in candidates:
-        new_tokens[c['id']] = c['symbol']
+    try:
+        candidates = screener.screen_candidates() # Returns list of dicts
         
-    global TOKENS
-    TOKENS = new_tokens
-    log_msg(f"Watchlist updated: {len(TOKENS)} tokens. {list(TOKENS.values())}")
+        global TOKENS, TOKEN_METADATA
+        new_tokens = {}
+        new_meta = {}
+        
+        for c in candidates:
+            new_tokens[c['id']] = c['symbol']
+            # Store metadata for NIA
+            new_meta[c['id']] = {
+                'dev_score': c.get('dev_score', 0),
+                'comm_score': c.get('comm_score', 0),
+                'liq_score': c.get('liq_score', 0)
+            }
+            
+        TOKENS = new_tokens
+        TOKEN_METADATA = new_meta
+        log_msg(f"Watchlist updated: {len(TOKENS)} tokens.")
+    except Exception as e:
+        log_msg(f"Screener failed: {e}")
 
 # --- RISK MANAGEMENT ---
 def calculate_kelly_bet(cash, win_prob=0.55, win_loss_ratio=1.5, max_risk_pct=0.20):
@@ -268,6 +284,11 @@ def run_job(mode="standard"):
             ctx['btc_bullish'] = global_btc_context
             ctx['funding_ok'] = fetch_funding_rate(token_symbol)
             
+        # NIA Context
+        if mode == 'nia':
+            if token_id in TOKEN_METADATA:
+                ctx.update(TOKEN_METADATA[token_id])
+            
         signal = strategy.get_signal(df_hist, current_pos_price, highest_price, mode, context=ctx)
         
         # 3. Execute
@@ -284,8 +305,8 @@ def run_job(mode="standard"):
                 risk_cap = 0.06 # Flash (6% - High Risk Strategy)
             elif mode == 'echo':
                 risk_cap = 0.05 # Echo (5% - Expert Requirement)
-            elif mode == 'cvh':
-                risk_cap = 0.01 # CVH (1% - Expert "VC Style" sizing)
+            elif mode == 'nia':
+                risk_cap = 0.01 # NIA (1% - Expert "VC Style" sizing)
                 
             bet_size = calculate_kelly_bet(state['cash'], max_risk_pct=risk_cap)
             
@@ -320,11 +341,11 @@ def run_job(mode="standard"):
 
 def run_fleet():
     """Runs the 95/5 Split Portfolio"""
-    log_msg(">>> EXECUTING FLEET: 95% ECHO | 5% CVH <<<")
+    log_msg(">>> EXECUTING FLEET: 95% ECHO | 5% NIA <<<")
     # Run Echo (Primary)
     run_job(mode="echo")
-    # Run CVH (Side Bet)
-    run_job(mode="cvh")
+    # Run NIA (Side Bet)
+    run_job(mode="nia")
     log_msg(">>> FLEET EXECUTION COMPLETE <<<")
 
 import sys

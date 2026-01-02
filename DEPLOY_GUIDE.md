@@ -21,7 +21,7 @@ pip install -r requirements.txt
 ## 4. Launch the Bot (Choose Mode)
 
 ### Option A: The "Mixed Fleet" (Recommended)
-Runs **95% Echo** (Alpha Hunter) and **5% CAHV** (Vortex Harvest).
+Runs **95% Echo** (Alpha Hunter) and **5% NIA** (Narrative Ignition).
 ```bash
 nohup python3 strategic_bot.py mixed > bot.log 2>&1 &
 ```
