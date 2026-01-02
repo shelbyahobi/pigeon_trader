@@ -198,7 +198,12 @@ def run_job(mode="standard"):
         if signal == 'BUY' and token_id not in state['positions']:
             # BUY LOGIC
             # Use Kelly Criterion for sizing
-            bet_size = calculate_kelly_bet(state['cash'])
+            # EXPERT SAFETY: Cap risk based on mode
+            risk_cap = 0.12 # Standard (12%)
+            if mode == 'flash':
+                risk_cap = 0.06 # Flash (6% - High Risk Strategy)
+                
+            bet_size = calculate_kelly_bet(state['cash'], max_risk_pct=risk_cap)
             
             if state['cash'] >= bet_size:
                 amount = bet_size / price
