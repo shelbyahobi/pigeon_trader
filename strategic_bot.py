@@ -357,8 +357,18 @@ def main():
             IS_FLEET = True
     
     # Initial run
+    # 1. Hotfix: Ensure State File Exists
+    if not os.path.exists(STATE_FILE):
+        log_msg("Creating initial state file...")
+        save_state(load_state())
+
     update_watchlist()
     
+    # 2. Hotfix: API Cool-down
+    # Screener uses heavy API quota. Pause to let bucket refill before trading.
+    log_msg("Screener complete. Cooling down API for 60s...")
+    time.sleep(60)
+
     if IS_FLEET:
         run_fleet()
         schedule.every(1).hours.do(run_fleet)
