@@ -78,17 +78,18 @@ def screen_candidates():
         current_price = coin['current_price']
         dip_pct = ((ath - current_price) / ath) * 100
         
-        if dip_pct < MIN_DIP_PERCENT:
-             # Not dipped enough
-             continue
-
         # 2.5 Recent Crash Check (Flash Crash Strategy)
-        # Check if dropped > 50% in last 30 days (Crash)
+        # Check if dropped > 40% in last 30 days (Crash)
         crash_30d = coin.get('price_change_percentage_30d_in_currency')
         is_flash_crash = False
         if crash_30d and crash_30d < -40.0:
             print(f"  [ALERT] {symbol} is a Flash Crash Candidate! ({crash_30d:.1f}% in 30d)")
             is_flash_crash = True
+        
+        # LOGIC FIX: Pass if (Dip > 50%) OR (Flash Crash)
+        if (dip_pct < MIN_DIP_PERCENT) and (not is_flash_crash):
+             # Not dipped enough AND not a flash crash
+             continue
              
         # 3. Age Check (Slow - requires Detail Call)
         print(f"Checking details for {symbol} (Dip: {dip_pct:.1f}%)...")
