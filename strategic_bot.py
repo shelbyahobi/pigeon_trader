@@ -338,6 +338,12 @@ def run_job(mode="echo"):
 def run_fleet():
     log_msg(">>> FLEET: 70% ECHO | 30% NIA <<<")
     run_job(mode="echo")
+    
+    # Hotfix 3: Inter-Strategy Buffer
+    # Echo uses API calls. Give CoinGecko 30s to recover before NIA runs.
+    log_msg("Buffer: Sleeping 30s before NIA...")
+    time.sleep(30)
+    
     run_job(mode="nia")
     log_msg(">>> FLEET COMPLETE <<<")
 
