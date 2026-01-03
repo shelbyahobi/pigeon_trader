@@ -258,8 +258,8 @@ def run_job(mode="echo"):
         
         price = current_market_data[token_id]['price']
         
-        # Fetch history
-        df_hist = fetch_candle_history(token_id)
+        # Fetch history with RETRY
+        df_hist = fetch_candle_history_with_retry(token_id)
         if df_hist is None or len(df_hist) < 200:
             continue
         
