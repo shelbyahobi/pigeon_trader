@@ -395,10 +395,10 @@ def main():
             IS_FLEET = True
     
     # Initial run
-    # 1. Hotfix: Ensure State File Exists
-    if not os.path.exists(STATE_FILE):
-        log_msg("Creating initial state file...")
-        save_state(load_state())
+    # 1. Hotfix: Ensure State File Exists & Normalized
+    # Always load and save on startup to ensure format migration persists
+    log_msg("Verifying state integrity...")
+    save_state(load_state())
 
     update_watchlist()
     
