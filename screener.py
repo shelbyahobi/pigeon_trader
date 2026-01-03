@@ -71,139 +71,171 @@ def get_market_chart(coin_id, days=30):
     return None
 
 
+# --- MARKET CAP CONFIG ---
+MIN_MCAP = 500_000_000     # $500M
+MAX_MCAP = 50_000_000_000  # $50B
+
+def get_min_volume(mcap):
+    """Volume requirements scale with market cap"""
+    if mcap > 10_000_000_000:  # Large cap > $10B
+        return 5_000_000       # $5M daily minimum
+    elif mcap > 1_000_000_000: # Mid cap > $1B
+        return 1_000_000       # $1M daily minimum
+    else:                      # Small cap < $1B
+        return 500_000         # $500K daily minimum
+
+def classify_tier(mcap):
+    if mcap > 10_000_000_000: return 'large'
+    elif mcap > 5_000_000_000: return 'upper_mid'
+    elif mcap > 2_000_000_000: return 'core_mid'
+    elif mcap > 1_000_000_000: return 'lower_mid'
+    else: return 'small'
+
+def balance_watchlist(candidates):
+    """Ensure proper tier distribution: Large 20%, Upper Mid 30%, Core 35%, Lower 10%, Small 5%"""
+    
+    # Sort purely by dip (opportunity size) for now
+    candidates.sort(key=lambda x: x['dip_pct'], reverse=True)
+    
+    target_dist = {
+        'large': 0.20,
+        'upper_mid': 0.30,
+        'core_mid': 0.35, # The sweet spot
+        'lower_mid': 0.10,
+        'small': 0.05
+    }
+    
+    final_list = []
+    target_total = MAX_CANDIDATES
+    
+    tier_buckets = {k: [] for k in target_dist.keys()}
+    
+    for c in candidates:
+        tier_buckets[c['tier']].append(c)
+        
+    for tier, pct in target_dist.items():
+        count = max(1, int(target_total * pct)) # Ensure at least 1 per tier if available
+        available = tier_buckets[tier]
+        final_list.extend(available[:count])
+        
+    return final_list[:target_total]
+
 def screen_candidates():
-    print(f"--- STARTING SCREENER ---")
-    print(f"Criteria: Age >= {MIN_AGE_YEARS}y, Vol >= ${MIN_VOLUME_USD:,.0f}, Dip >= {MIN_DIP_PERCENT}%")
+    print(f"--- STARTING SCREENER (INTELLIGENCE MODE) ---")
     
     candidates = get_bnb_tokens()
     print(f"Fetched {len(candidates)} initial candidates.")
     
-    screened_list = []
-    
-    # DEBUG: Print sample of first candidate to verify data structure
-    if len(candidates) > 0:
-        print(f"DEBUG SAMPLE: {candidates[0]['symbol']} Keys: {candidates[0].keys()}")
+    valid_candidates = []
     
     for coin in candidates:
-
         symbol = coin['symbol'].upper()
         coin_id = coin['id']
+        mcap = coin.get('market_cap', 0)
+        vol = coin.get('total_volume', 0)
         
-        # 1. Volume Check (Fast)
-        if coin['total_volume'] < MIN_VOLUME_USD:
+        # 1. Market Cap Filter
+        if not (MIN_MCAP <= mcap <= MAX_MCAP):
             continue
             
-        # 2. Dip Check (Fast)
-        ath = coin['ath']
+        # 2. Dynamic Volume Filter
+        if vol < get_min_volume(mcap):
+            continue
+            
+        # 3. Dip Check
+        ath = coin.get('ath', 0)
         if ath == 0: continue
-        current_price = coin['current_price']
+        current_price = coin.get('current_price', 0)
         dip_pct = ((ath - current_price) / ath) * 100
         
-        # 2.5 Expert Flash Crash Check
-        # Criteria: Drop > 25% from 14D High, OR Vol Spike, OR ATR > 7%
+        coin['dip_pct'] = dip_pct
+        coin['tier'] = classify_tier(mcap)
+        
+        # 4. Expert Flash Crash Logic
         is_flash_crash = False
-        
-        # Heuristic: Only do heavy check if 14d change is somewhat negative (-15%+) or huge ATH dip
         change_14d = coin.get('price_change_percentage_14d_in_currency')
-        
-        should_check_expert = False
-        if change_14d and change_14d < -15.0: should_check_expert = True
+        should_check_expert = (change_14d and change_14d < -15.0)
         
         expert_reason = ""
         
         if should_check_expert:
-            print(f"  [CHECK] {symbol} looks volatile ({change_14d:.1f}% 14d). Fetching Chart...")
+            print(f"  [CHECK] {symbol} ({coin['tier']}) volatile ({change_14d:.1f}%). Fetching Chart...")
             chart = get_market_chart(coin_id)
             
             if chart and 'prices' in chart and 'total_volumes' in chart:
-                prices = [p[1] for p in chart['prices']] # [timestamp, price]
+                prices = [p[1] for p in chart['prices']]
                 volumes = [v[1] for v in chart['total_volumes']]
                 
                 if len(prices) >= 20:
-                    # A. Drop from 14D High
                     high_14d = max(prices[-14:])
                     curr = prices[-1]
                     drop_from_high = (high_14d - curr) / high_14d
                     
-                    # B. Volume Spike (vs 20d avg)
                     avg_vol_20 = sum(volumes[-21:-1]) / 20 if len(volumes) > 20 else sum(volumes) / len(volumes)
                     vol_spike = volumes[-1] / avg_vol_20 if avg_vol_20 > 0 else 0
                     
-                    # C. Realized Volatility (Simple ATR approximation)
-                    # Approx daily range %
                     ranges = []
                     for i in range(1, len(prices)):
                         ranges.append(abs(prices[i] - prices[i-1]) / prices[i-1])
                     atr_pct = sum(ranges[-14:]) / 14 if len(ranges) >= 14 else 0
                     
-                    # EXPERT TRIGGER CONDITIONS (Any of 2)
                     triggers = 0
                     if drop_from_high > 0.25: triggers += 1
                     if vol_spike > 2.5: triggers += 1
                     if atr_pct > 0.07: triggers += 1
                     
-                    if triggers >= 1: # Lowered to 1 for test (Expert said 2, but market is flat)
+                    if triggers >= 1:
                         is_flash_crash = True
                         expert_reason = f"Drop: {drop_from_high*100:.1f}%, Vol: {vol_spike:.1f}x, ATR: {atr_pct*100:.1f}%"
                         print(f"  [ALERT] {symbol} EXPERT MATCH! {expert_reason}")
 
-        # LOGIC FIX: Pass if (Dip > 50%) OR (Flash Crash)
-        if (dip_pct < MIN_DIP_PERCENT) and (not is_flash_crash):
-             # Not dipped enough AND not a flash crash
-             # print(f"  [SKIP] {symbol}: Dip {dip_pct:.1f}% too small.") # Uncomment to debug
-             continue
-             
-        # 3. Age Check (Slow - requires Detail Call)
-        print(f"Checking details for {symbol} (Dip: {dip_pct:.1f}% | Flash: {is_flash_crash})...")
-        details = get_coin_details(coin_id)
+        coin['is_flash_crash'] = is_flash_crash
         
-        if not details:
-            print(f"  [SKIP] {symbol}: No details fetched.")
-            continue
-            
+        # Filter Logic
+        if (dip_pct < MIN_DIP_PERCENT) and (not is_flash_crash):
+             continue
+
+        # Add to valid list (without details yet)
+        valid_candidates.append(coin)
+
+    # Balance the list BEFORE fetching heavy details
+    print(f"Found {len(valid_candidates)} candidates pre-balancing.")
+    final_selection = balance_watchlist(valid_candidates)
+    
+    screened_list = []
+    
+    # Now fetch details for the winners
+    for coin in final_selection:
+        symbol = coin['symbol'].upper()
+        # Age Check & Metadata
+        print(f"Checking details for {symbol} ({coin['tier']} | Dip: {coin['dip_pct']:.1f}%)...")
+        details = get_coin_details(coin['id'])
+        
+        if not details: continue
+        
         genesis_date_str = details.get('genesis_date')
-        if not genesis_date_str:
-            # Some coins don't have this field, skip or assume unsafe
-            continue
-            
+        if not genesis_date_str: continue
+        
         try:
             genesis_date = datetime.datetime.strptime(genesis_date_str, '%Y-%m-%d')
-            age_days = (datetime.datetime.now() - genesis_date).days
-            age_years = age_days / 365.0
+            age_years = (datetime.datetime.now() - genesis_date).days / 365.0
             
             if age_years >= MIN_AGE_YEARS:
-                print(f"  [PASS] {symbol}: Age {age_years:.1f}y, Dip {dip_pct:.1f}%, Vol ${coin['total_volume']:,.0f}")
-                
-                # Fetch NIA data metrics
-                dev_score = details.get('developer_score', 0)
-                comm_score = details.get('community_score', 0)
-                liq_score = details.get('liquidity_score', 0)
-                cats = details.get('categories', [])
-                
-                screened_list.append({
-                    'id': coin_id,
+                 screened_list.append({
+                    'id': coin['id'],
                     'symbol': symbol,
                     'age_years': age_years,
-                    'dip_pct': dip_pct,
-                    'price': current_price,
-                    'is_flash_crash': is_flash_crash,
-                    'dev_score': dev_score,
-                    'comm_score': comm_score,
-                    'liq_score': liq_score,
-                    'categories': cats
+                    'dip_pct': coin['dip_pct'],
+                    'price': coin.get('current_price', 0),
+                    'is_flash_crash': coin.get('is_flash_crash', False),
+                    'dev_score': details.get('developer_score', 0),
+                    'comm_score': details.get('community_score', 0),
+                    'liq_score': details.get('liquidity_score', 0),
+                    'categories': details.get('categories', [])
                 })
-                
-                # IMPORTANT: Sleep to respect free tier (approx 10-30 calls/min)
-                time.sleep(3) 
-                
-                if len(screened_list) >= MAX_CANDIDATES:
-                    break
-            else:
-                print(f"  [FAIL] {symbol}: Too young ({age_years:.1f}y)")
-                time.sleep(1.5) # Still sleep a bit after a call
-                
+                 time.sleep(3)
         except ValueError:
-            print(f"  [ERR] {symbol} bad date format: {genesis_date_str}")
+            pass
             
     return screened_list
 
