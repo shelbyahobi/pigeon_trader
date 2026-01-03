@@ -200,6 +200,23 @@ def fetch_candle_history(token_id):
     
     return None
 
+def fetch_candle_history_with_retry(token_id, max_retries=2):
+    """Fetch candle history with retry on rate limit (Exponential Backoff)"""
+    for attempt in range(max_retries + 1):
+        df = fetch_candle_history(token_id)
+        
+        if df is not None:
+            return df
+        
+        # If rate limited and not last attempt, wait and retry
+        if attempt < max_retries:
+            wait_time = 30 * (attempt + 1)  # 30s, 60s
+            log_msg(f"Rate Limited on {token_id}. Retrying in {wait_time}s...")
+            time.sleep(wait_time)
+    
+    log_msg(f"Failed to fetch {token_id} history after {max_retries} retries")
+    return None
+
 # --- BOT LOGIC ---
 def run_job(mode="echo"):
     start_time = time.time()
@@ -372,8 +389,9 @@ def main():
     
     # 2. Hotfix: API Cool-down
     # Screener uses heavy API quota. Pause to let bucket refill before trading.
-    log_msg("Screener complete. Cooling down API for 60s...")
-    time.sleep(60)
+    # Reviewer recommended 90s to be safe.
+    log_msg("Screener complete. Cooling down API for 90s...")
+    time.sleep(90)
 
     if IS_FLEET:
         run_fleet()
