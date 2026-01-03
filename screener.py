@@ -4,8 +4,8 @@ import time
 
 # --- CONFIG ---
 MIN_AGE_YEARS = 2
-MIN_VOLUME_USD = 1_000_000
-MIN_DIP_PERCENT = 50.0
+MIN_VOLUME_USD = 300_000 # Loosened for Testing (was 1M)
+MIN_DIP_PERCENT = 40.0   # Loosened for Testing (was 50%)
 
 MAX_CANDIDATES = 20 # Limit to avoid hitting rate limits too hard during demo
 
