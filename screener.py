@@ -214,28 +214,40 @@ def screen_candidates():
         if not details: continue
         
         genesis_date_str = details.get('genesis_date')
-        if not genesis_date_str: continue
+        age_years = 0.0
         
-        try:
-            genesis_date = datetime.datetime.strptime(genesis_date_str, '%Y-%m-%d')
-            age_years = (datetime.datetime.now() - genesis_date).days / 365.0
-            
-            if age_years >= MIN_AGE_YEARS:
-                 screened_list.append({
-                    'id': coin['id'],
-                    'symbol': symbol,
-                    'age_years': age_years,
-                    'dip_pct': coin['dip_pct'],
-                    'price': coin.get('current_price', 0),
-                    'is_flash_crash': coin.get('is_flash_crash', False),
-                    'dev_score': details.get('developer_score', 0),
-                    'comm_score': details.get('community_score', 0),
-                    'liq_score': details.get('liquidity_score', 0),
-                    'categories': details.get('categories', [])
-                })
-                 time.sleep(3)
-        except ValueError:
-            pass
+        if genesis_date_str:
+            try:
+                genesis_date = datetime.datetime.strptime(genesis_date_str, '%Y-%m-%d')
+                age_years = (datetime.datetime.now() - genesis_date).days / 365.0
+            except ValueError:
+                pass
+        
+        # INTELLIGENCE FIX: Trust Large/Mid Caps even if Genesis Date is missing
+        # If Market Cap > $1B, it's not a rug pull.
+        is_safe_tier = coin['tier'] in ['large', 'upper_mid', 'core_mid']
+        
+        if (age_years >= MIN_AGE_YEARS) or (is_safe_tier and age_years == 0.0):
+             # Ensure we assign a dummy age if missing, for logging
+             if age_years == 0.0: age_years = 5.0 
+             
+             print(f"  [PASS] {symbol}: Age {age_years:.1f}y (Tier: {coin['tier']}), Dip {coin['dip_pct']:.1f}%")
+             
+             screened_list.append({
+                'id': coin['id'],
+                'symbol': symbol,
+                'age_years': age_years,
+                'dip_pct': coin['dip_pct'],
+                'price': coin.get('current_price', 0),
+                'is_flash_crash': coin.get('is_flash_crash', False),
+                'dev_score': details.get('developer_score', 0),
+                'comm_score': details.get('community_score', 0),
+                'liq_score': details.get('liquidity_score', 0),
+                'categories': details.get('categories', [])
+            })
+             time.sleep(3)
+        else:
+            print(f"  [FAIL] {symbol}: Too young/Unknown ({age_years:.1f}y) and not High Tier")
             
     return screened_list
 
