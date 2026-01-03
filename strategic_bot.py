@@ -136,30 +136,61 @@ def fetch_funding_rate(symbol):
         log_msg(f"Error fetching funding for {symbol}: {e}")
     return True
 
+def get_fallback_watchlist():
+    """Hardcoded quality tokens as fallback to prevent starvation"""
+    return [
+        {'id': 'chainlink', 'symbol': 'LINK', 'tier': 'upper_mid'},
+        {'id': 'uniswap', 'symbol': 'UNI', 'tier': 'core_mid'},
+        {'id': 'polkadot', 'symbol': 'DOT', 'tier': 'core_mid'},
+        {'id': 'avalanche-2', 'symbol': 'AVAX', 'tier': 'upper_mid'},
+        {'id': 'near', 'symbol': 'NEAR', 'tier': 'upper_mid'},
+        {'id': 'fantom', 'symbol': 'FTM', 'tier': 'core_mid'},
+        {'id': 'optimism', 'symbol': 'OP', 'tier': 'core_mid'},
+        {'id': 'arbitrum', 'symbol': 'ARB', 'tier': 'core_mid'},
+        {'id': 'fetch-ai', 'symbol': 'FET', 'tier': 'core_mid'},
+        {'id': 'render-token', 'symbol': 'RNDR', 'tier': 'core_mid'},
+        {'id': 'the-sandbox', 'symbol': 'SAND', 'tier': 'core_mid'},
+        {'id': 'decentraland', 'symbol': 'MANA', 'tier': 'core_mid'},
+        {'id': 'aave', 'symbol': 'AAVE', 'tier': 'core_mid'},
+        {'id': 'injective-protocol', 'symbol': 'INJ', 'tier': 'core_mid'},
+        {'id': 'immutable-x', 'symbol': 'IMX', 'tier': 'core_mid'},
+        {'id': 'gala', 'symbol': 'GALA', 'tier': 'lower_mid'},
+        {'id': 'axie-infinity', 'symbol': 'AXS', 'tier': 'lower_mid'},
+        {'id': 'theta-token', 'symbol': 'THETA', 'tier': 'core_mid'},
+        {'id': 'enjincoin', 'symbol': 'ENJ', 'tier': 'lower_mid'},
+        {'id': 'chiliz', 'symbol': 'CHZ', 'tier': 'lower_mid'},
+    ]
+
 def update_watchlist():
     """Update TOKENS from screener"""
     log_msg("Updating watchlist...")
+    global TOKENS
+    
     try:
         candidates = screener.screen_candidates()
-        global TOKENS, TOKEN_METADATA
         
-        new_tokens = {}
-        new_meta = {}
-        
+        # FAILSAFE: If screener yields too few tokens, use fallback
+        if len(candidates) < 5:
+            log_msg(f"⚠️ Screener yielded only {len(candidates)} tokens. Using Fallback Watchlist (20 tokens).")
+            candidates = get_fallback_watchlist()
+            
+        TOKENS = {}
+        count = 0 
         for c in candidates:
-            new_tokens[c['id']] = c['symbol']
-            new_meta[c['id']] = {
-                'dev_score': c.get('dev_score', 0),
-                'comm_score': c.get('comm_score', 0),
-                'liq_score': c.get('liq_score', 0),
-                'categories': c.get('categories', [])
-            }
-        
-        TOKENS = new_tokens
-        TOKEN_METADATA = new_meta
-        log_msg(f"Watchlist updated: {len(TOKENS)} tokens")
+            token_id = c['id']
+            # Default to "echo" if tier is missing, but prioritize based on logic
+            # Echo: Large/Mid/Upper. NIA: All valid.
+            strategies = ['echo', 'nia'] # Default to both for now
+            if c.get('tier') == 'small':
+                strategies = ['nia'] # Small caps NIA only
+            
+            TOKENS[token_id] = strategies
+            count += 1
+            
+        log_msg(f"Watchlist updated: {count} tokens")
+            
     except Exception as e:
-        log_msg(f"Screener failed: {e}")
+        log_msg(f"Error updating watchlist: {e}")
 
 # --- MARKET DATA ---
 def fetch_market_data(token_ids):
