@@ -20,7 +20,140 @@ TOKEN_METADATA = {}
 market_data = {}
 CANDLE_CACHE = {} # Memory cache: {token_id: (timestamp, df)}
 
-# ... (strategy init) ...
+# --- STRATEGY INITIALIZATION ---
+strategy = AAMRStrategy()
+
+def get_strategy_for_mode(mode):
+    if mode == 'echo':
+        return EchoStrategy()
+    elif mode == 'nia':
+        return NIAStrategy()
+    return AAMRStrategy()
+
+# --- LOGGING ---
+STATE_FILE = "strategic_state.json"
+LOG_FILE = "strategic_log.txt"
+
+def log_msg(msg):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    entry = f"[{timestamp}] {msg}"
+    print(entry)
+    with open(LOG_FILE, "a") as f:
+        f.write(entry + "\n")
+
+def send_alert(msg):
+    log_msg(f"*** ALERT: {msg} ***")
+
+# --- STATE MANAGEMENT ---
+def load_state():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, 'r') as f:
+                state = json.load(f)
+                if 'echo' not in state:
+                    log_msg("Initializing Unified State: 70/30 Split")
+                    state = {
+                        'echo': {'cash': 700.0, 'positions': {}},
+                        'nia': {'cash': 300.0, 'positions': {}}
+                    }
+                return state
+        except:
+            pass
+    return {
+        'echo': {'cash': 700.0, 'positions': {}},
+        'nia': {'cash': 300.0, 'positions': {}}
+    }
+
+def save_state(state):
+    with open(STATE_FILE, 'w') as f:
+        json.dump(state, f, indent=4)
+
+# --- MARKET CONTEXT FUNCTIONS ---
+def fetch_btc_trend():
+    """Returns True if BTC > 21-Week EMA"""
+    try:
+        url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
+        params = {'vs_currency': 'usd', 'days': 160, 'interval': 'daily'}
+        r = requests.get(url, params=params, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            prices = [p[1] for p in data['prices']]
+            if len(prices) < 147:
+                return True
+            
+            s = pd.Series(prices)
+            ema_21w = s.ewm(span=147, adjust=False).mean().iloc[-1]
+            current = prices[-1]
+            return current > ema_21w
+    except Exception as e:
+        # log_msg might not be safe to call here if this runs before log_msg definition
+        # But we are placing it after log_msg
+        log_msg(f"Error fetching BTC trend: {e}")
+    return True
+
+def fetch_funding_rate(symbol):
+    """Returns True if funding rate < 0.01%"""
+    try:
+        binance_symbol = f"{symbol}USDT"
+        url = "https://fapi.binance.com/fapi/v1/premiumIndex"
+        params = {'symbol': binance_symbol}
+        r = requests.get(url, params=params, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            if 'lastFundingRate' in data:
+                return float(data['lastFundingRate']) < 0.0001
+    except Exception as e:
+        log_msg(f"Error fetching funding for {symbol}: {e}")
+    return True
+
+def update_watchlist():
+    """Update TOKENS from screener"""
+    log_msg("Updating watchlist...")
+    try:
+        candidates = screener.screen_candidates()
+        global TOKENS, TOKEN_METADATA
+        
+        new_tokens = {}
+        new_meta = {}
+        
+        for c in candidates:
+            new_tokens[c['id']] = c['symbol']
+            new_meta[c['id']] = {
+                'dev_score': c.get('dev_score', 0),
+                'comm_score': c.get('comm_score', 0),
+                'liq_score': c.get('liq_score', 0),
+                'categories': c.get('categories', [])
+            }
+        
+        TOKENS = new_tokens
+        TOKEN_METADATA = new_meta
+        log_msg(f"Watchlist updated: {len(TOKENS)} tokens")
+    except Exception as e:
+        log_msg(f"Screener failed: {e}")
+
+# --- MARKET DATA ---
+def fetch_market_data(token_ids):
+    """Fetch current price/ATH for list of tokens"""
+    ids_str = ",".join(token_ids)
+    url = "https://api.coingecko.com/api/v3/coins/markets"
+    params = {'vs_currency': 'usd', 'ids': ids_str}
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        
+        market_map = {}
+        if isinstance(data, list):
+            for item in data:
+                market_map[item['id']] = {
+                    'price': item['current_price'],
+                    'ath': item['ath'],
+                    'symbol': item['symbol'].upper()
+                }
+        return market_map
+    except Exception as e:
+        log_msg(f"Error fetching market data: {e}")
+        return None
 
 # ... (skip to fetch_candle_history) ...
 
