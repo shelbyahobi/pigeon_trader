@@ -69,6 +69,36 @@ def save_state(state):
         json.dump(state, f, indent=4)
 
 # --- MARKET CONTEXT FUNCTIONS ---
+def fetch_btc_regime():
+    """
+    Returns (regime_name, multiplier) based on BTC 30d return.
+    Bull (>20%) -> 1.5x
+    Bear (<-20%) -> 0.5x
+    Neutral -> 1.0x
+    """
+    try:
+        url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
+        params = {'vs_currency': 'usd', 'days': 35, 'interval': 'daily'}
+        r = requests.get(url, params=params, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            prices = [p[1] for p in data['prices']]
+            if len(prices) >= 30:
+                price_now = prices[-1]
+                price_30d = prices[-30]
+                ret = (price_now / price_30d) - 1
+                
+                if ret > 0.20:
+                    return "BULL", 1.5
+                elif ret < -0.20:
+                    return "BEAR", 0.5
+                else:
+                    return "NEUTRAL", 1.0
+    except Exception as e:
+        log_msg(f"Error fetching BTC regime: {e}")
+    
+    return "NEUTRAL", 1.0
+
 def fetch_btc_trend():
     """Returns True if BTC > 21-Week EMA"""
     try:
@@ -308,12 +338,15 @@ def run_job(mode="echo"):
             pool_cash = pool['cash']
             risk_cap = 0.05 if mode == 'echo' else 0.10
             
+            # Regime Detection logic
+            regime, multiplier = fetch_btc_regime()
+            
             # Max positions
             max_pos = 10 if mode == 'echo' else 5
             if len(pool['positions']) >= max_pos:
                 continue
             
-            bet_size = pool_cash * risk_cap
+            bet_size = pool_cash * risk_cap * multiplier
             
             # Dust filter
             if bet_size < 10:
@@ -331,11 +364,12 @@ def run_job(mode="echo"):
                     'entry_price': price,
                     'highest_price': price,
                     'amount': amount,
-                    'timestamp': time.time()
+                    'timestamp': time.time(),
+                    'regime_at_entry': regime # Store context
                 }
                 
-                log_msg(f"BUY {token_symbol} ({mode}) @ ${price:.2f} Size: ${bet_size:.1f}")
-                send_alert(f"BUY {token_symbol} ({mode})")
+                log_msg(f"BUY {token_symbol} ({mode}) @ ${price:.2f} Size: ${bet_size:.1f} ({regime})")
+                send_alert(f"BUY {token_symbol} ({mode}) Size: ${bet_size:.1f} [{regime}]")
                 
                 state[mode] = pool
                 save_state(state)
