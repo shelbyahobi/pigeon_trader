@@ -4,3 +4,6 @@ pandas
 matplotlib
 schedule
 streamlit
+jinja2
+python-dotenv
+pyngrok
