@@ -111,6 +111,8 @@ def fetch_btc_regime():
                     return "BEAR", 0.5
                 else:
                     return "NEUTRAL", 1.0
+        # --- RATE LIMIT BUFFER (Increased to 5s) ---
+        time.sleep(5)
     except Exception as e:
         log_msg(f"Error fetching BTC regime: {e}")
     
@@ -156,26 +158,26 @@ def fetch_funding_rate(symbol):
 def get_fallback_watchlist():
     """Hardcoded quality tokens as fallback to prevent starvation"""
     return [
-        {'id': 'chainlink', 'symbol': 'LINK', 'tier': 'upper_mid'},
-        {'id': 'uniswap', 'symbol': 'UNI', 'tier': 'core_mid'},
-        {'id': 'polkadot', 'symbol': 'DOT', 'tier': 'core_mid'},
-        {'id': 'avalanche-2', 'symbol': 'AVAX', 'tier': 'upper_mid'},
-        {'id': 'near', 'symbol': 'NEAR', 'tier': 'upper_mid'},
-        {'id': 'fantom', 'symbol': 'FTM', 'tier': 'core_mid'},
-        {'id': 'optimism', 'symbol': 'OP', 'tier': 'core_mid'},
-        {'id': 'arbitrum', 'symbol': 'ARB', 'tier': 'core_mid'},
-        {'id': 'fetch-ai', 'symbol': 'FET', 'tier': 'core_mid'},
-        {'id': 'render-token', 'symbol': 'RNDR', 'tier': 'core_mid'},
-        {'id': 'the-sandbox', 'symbol': 'SAND', 'tier': 'core_mid'},
-        {'id': 'decentraland', 'symbol': 'MANA', 'tier': 'core_mid'},
-        {'id': 'aave', 'symbol': 'AAVE', 'tier': 'core_mid'},
-        {'id': 'injective-protocol', 'symbol': 'INJ', 'tier': 'core_mid'},
-        {'id': 'immutable-x', 'symbol': 'IMX', 'tier': 'core_mid'},
-        {'id': 'gala', 'symbol': 'GALA', 'tier': 'lower_mid'},
-        {'id': 'axie-infinity', 'symbol': 'AXS', 'tier': 'lower_mid'},
-        {'id': 'theta-token', 'symbol': 'THETA', 'tier': 'core_mid'},
-        {'id': 'enjincoin', 'symbol': 'ENJ', 'tier': 'lower_mid'},
-        {'id': 'chiliz', 'symbol': 'CHZ', 'tier': 'lower_mid'},
+        {'id': 'chainlink', 'symbol': 'LINK', 'tier': 'upper_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'uniswap', 'symbol': 'UNI', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'polkadot', 'symbol': 'DOT', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'avalanche-2', 'symbol': 'AVAX', 'tier': 'upper_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'near', 'symbol': 'NEAR', 'tier': 'upper_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'fantom', 'symbol': 'FTM', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'optimism', 'symbol': 'OP', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'arbitrum', 'symbol': 'ARB', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'fetch-ai', 'symbol': 'FET', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'render-token', 'symbol': 'RNDR', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'the-sandbox', 'symbol': 'SAND', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'decentraland', 'symbol': 'MANA', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'aave', 'symbol': 'AAVE', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'injective-protocol', 'symbol': 'INJ', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'immutable-x', 'symbol': 'IMX', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'gala', 'symbol': 'GALA', 'tier': 'lower_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'axie-infinity', 'symbol': 'AXS', 'tier': 'lower_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'theta-token', 'symbol': 'THETA', 'tier': 'core_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'enjincoin', 'symbol': 'ENJ', 'tier': 'lower_mid', 'signal_score': 50, 'dip_pct': 0},
+        {'id': 'chiliz', 'symbol': 'CHZ', 'tier': 'lower_mid', 'signal_score': 50, 'dip_pct': 0},
     ]
 
 def update_watchlist():
@@ -459,7 +461,7 @@ def run_job(mode="echo"):
         if current_pos and price > current_pos['highest_price']:
             save_state(state)
         
-        time.sleep(1)
+        time.sleep(5)
     
     log_msg(f"{mode.upper()} complete. Cash: ${pool['cash']:.1f}")
 

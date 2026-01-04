@@ -56,11 +56,20 @@ if page_mode == "Live Monitor":
             
             # Show top 5
             df_wl = pd.DataFrame(watchlist)
-            if not df_wl.empty and 'signal_score' in df_wl.columns:
+            
+            if not df_wl.empty:
+                # Ensure columns exist
+                if 'signal_score' not in df_wl.columns:
+                    df_wl['signal_score'] = 0.0 # Default for fallback
+                if 'dip_pct' not in df_wl.columns:
+                    df_wl['dip_pct'] = 0.0
+                if 'tier' not in df_wl.columns:
+                    df_wl['tier'] = 'unknown'
+
                 df_wl = df_wl.sort_values('signal_score', ascending=False)
-                st.dataframe(df_wl[['symbol', 'signal_score', 'tier', 'dip_pct']].head(10))
+                st.dataframe(df_wl[['symbol', 'signal_score', 'tier', 'dip_pct']].head(20))
             else:
-                st.write("No scoring data yet.")
+                st.write("Watchlist is empty.")
         else:
             st.warning("No Watchlist found.")
 
