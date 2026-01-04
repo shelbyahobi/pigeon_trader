@@ -189,7 +189,7 @@ def update_watchlist():
         # FAILSAFE: If screener yields too few tokens, use fallback
         # TESTING MODE (Paper=True): Force fallback if list is short (< 10) to ensure good data.
         # PRODUCTION (Paper=False): Only fallback if list is critical (< 3).
-        min_candidates = 10 if config.PAPER_MODE else 3
+        min_candidates = 10 if PAPER_MODE else 3
         
         if len(candidates) < min_candidates:
             log_msg(f"⚠️ Screener yielded only {len(candidates)} tokens (Min: {min_candidates}). Using Fallback Watchlist (20 tokens).")
