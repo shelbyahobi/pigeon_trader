@@ -343,6 +343,11 @@ def run_job(mode="echo"):
         if df_hist is None or len(df_hist) < 200:
             continue
         
+        # --- RATE LIMIT PROTECTION ---
+        # Sleep 2s between tokens to prevent API spam (30 calls/min limit)
+        # We have 20 tokens, so this adds ~40s to loop which is fine for hourly job.
+        time.sleep(2)
+        
         # Position state
         current_pos = pool['positions'].get(token_id)
         current_pos_price = current_pos['entry_price'] if current_pos else None
