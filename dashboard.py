@@ -103,38 +103,61 @@ elif page_mode == "Strategy Backtest":
         return run_all_strategies()
     
     results = get_results()
-    selected_token = st.sidebar.selectbox("Select Token", list(results.keys()))
+    
+    # --- Category Filter ---
+    # Hardcoded mapping for demo purposes (would ideally come from config)
+    TOKEN_CATEGORIES = {
+        'BTC': 'Large Cap', 'ETH': 'Large Cap', 'SOL': 'Large Cap',
+        'LINK': 'Mid Cap', 'UNI': 'Mid Cap', 'DOT': 'Mid Cap', 'AVAX': 'Large Cap',
+        'FET': 'Mid Cap', 'RNDR': 'Mid Cap', 'INJ': 'Mid Cap', 'AAVE': 'Mid Cap',
+        'ALPACA': 'Micro Cap', 'GALA': 'Small Cap', 'SAND': 'Mid Cap'
+    }
+    
+    categories = ["All"] + sorted(list(set(TOKEN_CATEGORIES.values())))
+    selected_cat = st.sidebar.selectbox("Filter by Category", categories, index=0)
+    
+    # Filter tokens
+    available_tokens = list(results.keys())
+    if selected_cat != "All":
+        available_tokens = [t for t in available_tokens if TOKEN_CATEGORIES.get(t, 'Unknown') == selected_cat]
+    
+    if available_tokens:
+        selected_token = st.sidebar.selectbox("Select Token", available_tokens)
+    else:
+        st.sidebar.warning(f"No data for {selected_cat}")
+        selected_token = None
 
-    col1, col2 = st.columns(2)
+    if selected_token:
+        col1, col2 = st.columns(2)
 
-    with col1:
-        st.subheader(f"Performance Metrics: {selected_token}")
-        
-        # Create Metrics Table
-        strats = results[selected_token]
-        metrics = []
-        for name, res in strats.items():
-            metrics.append({
-                "Strategy": name,
-                "ROI %": f"{res['roi']:.2f}%"
-            })
-        st.table(pd.DataFrame(metrics))
+        with col1:
+            st.subheader(f"Performance Metrics: {selected_token}")
+            
+            # Create Metrics Table
+            strats = results[selected_token]
+            metrics = []
+            for name, res in strats.items():
+                metrics.append({
+                    "Strategy": name,
+                    "ROI %": f"{res['roi']:.2f}%"
+                })
+            st.table(pd.DataFrame(metrics))
 
-    with col2:
-        st.subheader("Equity Curves")
-        
-        # Plotting
-        fig, ax = plt.subplots()
-        for name, res in strats.items():
-            equity = res['equity_curve']
-            if not equity.empty:
-                ax.plot(equity.index, equity, label=name)
-        
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Equity ($)")
-        ax.legend()
-        ax.grid(True)
-        st.pyplot(fig)
+        with col2:
+            st.subheader("Equity Curves")
+            
+            # Plotting
+            fig, ax = plt.subplots()
+            for name, res in strats.items():
+                equity = res['equity_curve']
+                if not equity.empty:
+                    ax.plot(equity.index, equity, label=name)
+            
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Equity ($)")
+            ax.legend()
+            ax.grid(True)
+            st.pyplot(fig)
 
 elif page_mode == "Historical Stress Test":
     st.header("Historical Stress Test (2022 vs 2024)")
