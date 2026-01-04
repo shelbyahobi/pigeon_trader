@@ -23,8 +23,15 @@ PANCAKE_ROUTER_ADDRESS = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
 WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
 
 # --- NOTIFICATIONS ---
-TELEGRAM_TOKEN = "" # User to fill: "123456789:ABC..."
-TELEGRAM_CHAT_ID = "" # User to fill: "-100..."
+# Security: Load from .env file to prevent git leaks
+import os
+from dotenv import load_dotenv
+
+# Try to load .env, but don't crash if missing (fallback to empty)
+load_dotenv()
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # --- SYSTEM ---
 WATCHLIST_FILE = "watchlist.json" # For Dashboard Visibility
