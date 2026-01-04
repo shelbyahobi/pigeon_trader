@@ -7,3 +7,4 @@ streamlit
 jinja2
 python-dotenv
 pyngrok
+yfinance

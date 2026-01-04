@@ -1,102 +1,103 @@
-import requests
+import yfinance as yf
 import pandas as pd
 import time
 import os
-from datetime import datetime
 
-# The Pigeon Shortlist
-TOKENS = [
-    {'id': 'chainlink', 'symbol': 'LINK'},
-    {'id': 'uniswap', 'symbol': 'UNI'},
-    {'id': 'polkadot', 'symbol': 'DOT'},
-    {'id': 'avalanche-2', 'symbol': 'AVAX'},
-    {'id': 'near', 'symbol': 'NEAR'},
-    {'id': 'fantom', 'symbol': 'FTM'},
-    {'id': 'optimism', 'symbol': 'OP'},
-    {'id': 'arbitrum', 'symbol': 'ARB'},
-    {'id': 'fetch-ai', 'symbol': 'FET'},
-    {'id': 'render-token', 'symbol': 'RNDR'},
-    {'id': 'the-sandbox', 'symbol': 'SAND'},
-    {'id': 'decentraland', 'symbol': 'MANA'},
-    {'id': 'aave', 'symbol': 'AAVE'},
-    {'id': 'injective-protocol', 'symbol': 'INJ'},
-    {'id': 'immutable-x', 'symbol': 'IMX'},
-    {'id': 'gala', 'symbol': 'GALA'},
-    {'id': 'axie-infinity', 'symbol': 'AXS'},
-    {'id': 'theta-token', 'symbol': 'THETA'},
-    {'id': 'enjincoin', 'symbol': 'ENJ'},
-    {'id': 'chiliz', 'symbol': 'CHZ'}
-]
+# Mapping CoinGecko IDs (used in bot) to Yahoo Tickers
+TOKEN_MAP = {
+    'chainlink': 'LINK-USD',
+    'uniswap': 'UNI-USD',
+    'polkadot': 'DOT-USD',
+    'avalanche-2': 'AVAX-USD',
+    'near': 'NEAR-USD',
+    'fantom': 'FTM-USD',
+    'optimism': 'OP-USD',
+    'arbitrum': 'ARB-USD',
+    'fetch-ai': 'FET-USD',
+    'render-token': 'RNDR-USD',
+    'the-sandbox': 'SAND-USD',
+    'decentraland': 'MANA-USD',
+    'aave': 'AAVE-USD',
+    'injective-protocol': 'INJ-USD',
+    'immutable-x': 'IMX-USD',
+    'gala': 'GALA-USD',
+    'axie-infinity': 'AXS-USD',
+    'theta-token': 'THETA-USD',
+    'enjincoin': 'ENJ-USD',
+    'chiliz': 'CHZ-USD',
+    # Benchmarks
+    'bitcoin': 'BTC-USD',
+    'ethereum': 'ETH-USD',
+    'solana': 'SOL-USD',
+    'binancecoin': 'BNB-USD',
+    'pancakeswap-token': 'CAKE-USD',
+}
 
 DATA_DIR = 'data'
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
-def fetch_history(token_id, vs_currency='usd', days='max'):
-    url = f"https://api.coingecko.com/api/v3/coins/{token_id}/market_chart"
-    params = {
-        'vs_currency': vs_currency,
-        'days': days,
-        'interval': 'daily'
-    }
-    
-    print(f"Fetching {token_id}...")
+def fetch_history(token_id, ticker):
+    print(f"Fetching {ticker} for {token_id}...")
     try:
-        response = requests.get(url, params=params, timeout=10)
+        # Download data from 2022-01-01 to Present
+        df = yf.download(ticker, start="2022-01-01", progress=False)
         
-        if response.status_code == 429:
-            print("⚠️ Rate Limited! Waiting 60s...")
-            time.sleep(60)
-            return fetch_history(token_id, vs_currency, days)
-            
-        response.raise_for_status()
-        data = response.json()
+        if df.empty:
+            print(f"⚠️ No data for {ticker}")
+            return
         
-        prices = data.get('prices', [])
-        volumes = data.get('total_volumes', [])
+        # Yahoo Finance returns a MultiIndex sometimes, or specific columns.
+        # We generally get: Open, High, Low, Close, Adj Close, Volume
+        # We need to flatten it and keep 'Close' as 'price' and 'Volume' as 'volume'
         
-        if not prices:
-            print(f"No data for {token_id}")
-            return None
-            
-        # Structure: [timestamp, value]
-        df_price = pd.DataFrame(prices, columns=['timestamp', 'price'])
-        df_vol = pd.DataFrame(volumes, columns=['timestamp', 'volume'])
+        df = df.reset_index()
         
-        # Merge
-        df = pd.merge(df_price, df_vol, on='timestamp', how='inner')
-        df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
-        df.drop('timestamp', axis=1, inplace=True)
+        # Standardize columns (ensure lowercase 'date', 'price', 'volume')
+        # YF columns are usually Title Case: Date, Open, High, Low, Close, Volume
         
-        # Filter for 2022-2025 (to catch 2022 bear and 2024 bull)
-        df = df[df['date'] >= '2022-01-01']
+        df.rename(columns={
+            'Date': 'date',
+            'Close': 'price',
+            'Volume': 'volume'
+        }, inplace=True)
         
-        return df
+        # Filter to keep only needed columns
+        keep_cols = ['date', 'price', 'volume']
+        # If High/Low/Open exist, keep them for more advanced strats if needed, but min req is price/vol
+        for c in ['Open', 'High', 'Low']:
+            if c in df.columns:
+                df.rename(columns={c: c.lower()}, inplace=True)
+                keep_cols.append(c.lower())
+                
+        df = df[keep_cols]
         
-    except Exception as e:
-        print(f"Error fetching {token_id}: {e}")
-        return None
-
-def main():
-    print("🦅 Pigeon History Fetcher 🦅")
-    print("----------------------------")
-    
-    for token in TOKENS:
-        symbol = token['symbol']
-        token_id = token['id']
+        # Save
+        # Map back to the filename format the bot expects: "SYMBOL_history.csv"
+        # We need the symbol from the ID.
+        # Quick hack: ID is mapped, but we save as "SYMBOL_history.csv" 
+        # The bot uses IDs internally but loads files based on... wait using os.path.basename in backtest.
+        # Actually backtest_system.py does: `symbol = os.path.basename(f).replace('_history.csv', '')`
+        # So if we save as `LINK_history.csv`, the key in backtest will be `LINK`. 
+        # The bot watchlist uses `symbol` so this matches.
+        
+        symbol = ticker.split('-')[0]
         filename = f"{DATA_DIR}/{symbol}_history.csv"
         
-        if os.path.exists(filename):
-            print(f"Skipping {symbol} (already exists)")
-            continue
-            
-        df = fetch_history(token_id)
-        if df is not None and not df.empty:
-            df.to_csv(filename, index=False)
-            print(f"✅ Saved {symbol} ({len(df)} days)")
+        df.to_csv(filename, index=False)
+        print(f"✅ Saved {symbol} ({len(df)} days)")
         
-        # Polite delay for public API
-        time.sleep(10)
+    except Exception as e:
+        print(f"Error fetching {ticker}: {e}")
+
+def main():
+    print("🦅 Pigeon History Fetcher (Yahoo Edition) 🦅")
+    print("------------------------------------------")
+    
+    for token_id, ticker in TOKEN_MAP.items():
+        fetch_history(token_id, ticker)
+        # Yahoo is nicer than CoinGecko, but let's be polite
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()
