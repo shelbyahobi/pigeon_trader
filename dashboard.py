@@ -168,7 +168,8 @@ elif page_mode == "Historical Stress Test":
         # Summary Pivot
         st.subheader("Average ROI by Market Cycle")
         summary = df_heavy.groupby(['Cycle', 'Strategy'])['ROI'].mean().unstack()
-        st.dataframe(summary.style.format("{:.2f}%").background_gradient(cmap='RdYlGn'))
+        # Rounding explicitly instead of using style
+        st.dataframe(summary.round(2))
         
         st.subheader("Detailed Results")
         st.dataframe(df_heavy)
