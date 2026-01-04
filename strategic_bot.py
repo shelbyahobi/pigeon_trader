@@ -6,7 +6,11 @@ import os
 from datetime import datetime
 import pandas as pd
 import sys
-import config
+import sys
+from config import (
+    PAPER_MODE, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, WATCHLIST_FILE,
+    BSC_RPC_URL, WBNB_ADDRESS, PANCAKE_ROUTER_ADDRESS, TRADE_AMOUNT_BNB
+)
 import screener
 import gc
 from strategies.aamr import AAMRStrategy
@@ -41,8 +45,21 @@ def log_msg(msg):
     with open(LOG_FILE, "a") as f:
         f.write(entry + "\n")
 
+def send_telegram_msg(msg):
+    """Send message to Telegram if configured"""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+        
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = {"chat_id": TELEGRAM_CHAT_ID, "text": msg}
+        requests.post(url, data=data, timeout=5)
+    except Exception as e:
+        print(f"Telegram Error: {e}")
+
 def send_alert(msg):
     log_msg(f"*** ALERT: {msg} ***")
+    send_telegram_msg(f"🚨 ALERT: {msg}")
 
 # --- STATE MANAGEMENT ---
 def load_state():
@@ -191,7 +208,12 @@ def update_watchlist():
             TOKENS[token_id] = strategies
             count += 1
             
+        # SAVE WATCHLIST FOR DASHBOARD
+        with open(WATCHLIST_FILE, 'w') as f:
+            json.dump(candidates, f, indent=4)
+            
         log_msg(f"Watchlist updated: {count} tokens")
+        send_telegram_msg(f"🦅 Watchlist Updated: {count} tokens active.")
             
     except Exception as e:
         log_msg(f"Error updating watchlist: {e}")

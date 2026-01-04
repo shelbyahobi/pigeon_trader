@@ -1,27 +1,101 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import json
+import os
+import time
 from backtest_system import run_all_strategies, load_all_data
 
 st.set_page_config(page_title="Pigeon Trader Dashboard", layout="wide")
 
-st.title("🐦 Pigeon Trader - Strategy Dashboard")
+st.title("🐦 Pigeon Trader - Command Center")
 
-# Run Analysis (Cache this in a real app)
-@st.cache_data
-def get_results():
-    return run_all_strategies()
-
-results = get_results()
+# --- LIVE MONITOR FUNCTIONS ---
+def load_json_safe(filepath):
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, 'r') as f:
+                return json.load(f)
+        except:
+            return None
+    return None
 
 # Sidebar
 st.sidebar.header("Configuration")
-selected_token = st.sidebar.selectbox("Select Token", list(results.keys()))
+page_mode = st.sidebar.radio("Mode", ["Live Monitor", "Strategy Backtest", "Historical Stress Test"])
 
-# Main Content
-tab1, tab2 = st.tabs(["Standard Backtest", "Bull vs Bear (Heavy)"])
+if page_mode == "Live Monitor":
+    st.header("🔴 Live Bot Status")
+    
+    # Refresh Button
+    if st.button("Refresh Data"):
+        st.rerun()
 
-with tab1:
+    # Load State
+    state = load_json_safe("strategic_state.json")
+    watchlist = load_json_safe("watchlist.json")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.subheader("💰 Fleet Status")
+        if state:
+            echo_cash = state.get('echo', {}).get('cash', 0)
+            nia_cash = state.get('nia', {}).get('cash', 0)
+            total_cash = echo_cash + nia_cash
+            st.metric("Total Free Cash", f"${total_cash:.2f}")
+            st.metric("Echo Pool", f"${echo_cash:.2f}")
+            st.metric("NIA Pool", f"${nia_cash:.2f}")
+        else:
+            st.error("Bot State not found (Run bot first)")
+
+    with col2:
+        st.subheader("🦅 Active Watchlist")
+        if watchlist:
+            st.metric("Total Candidates", len(watchlist))
+            
+            # Show top 5
+            df_wl = pd.DataFrame(watchlist)
+            if not df_wl.empty and 'signal_score' in df_wl.columns:
+                df_wl = df_wl.sort_values('signal_score', ascending=False)
+                st.dataframe(df_wl[['symbol', 'signal_score', 'tier', 'dip_pct']].head(10))
+            else:
+                st.write("No scoring data yet.")
+        else:
+            st.warning("No Watchlist found.")
+
+    with col3:
+        st.subheader("📦 Open Positions")
+        if state:
+            all_pos = []
+            for mode in ['echo', 'nia']:
+                positions = state.get(mode, {}).get('positions', {})
+                for tid, pos in positions.items():
+                    pos['mode'] = mode
+                    pos['token'] = tid
+                    all_pos.append(pos)
+            
+            if all_pos:
+                st.dataframe(pd.DataFrame(all_pos))
+            else:
+                st.info("No active trades.")
+                
+    st.divider()
+    st.subheader("Recent Logs")
+    if os.path.exists("strategic_log.txt"):
+        with open("strategic_log.txt", "r") as f:
+            lines = f.readlines()
+            st.code("".join(lines[-20:])) # Show last 20 lines
+
+elif page_mode == "Strategy Backtest":
+    # Run Analysis (Cache this in a real app)
+    @st.cache_data
+    def get_results():
+        return run_all_strategies()
+    
+    results = get_results()
+    selected_token = st.sidebar.selectbox("Select Token", list(results.keys()))
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -53,7 +127,7 @@ with tab1:
         ax.grid(True)
         st.pyplot(fig)
 
-with tab2:
+elif page_mode == "Historical Stress Test":
     st.header("Historical Stress Test (2022 vs 2024)")
     
     try:
@@ -75,9 +149,3 @@ with tab2:
         
     except FileNotFoundError:
         st.warning("`backtest_heavy_results.csv` not found. Please run `py backtest_heavy.py` first.")
-
-# Raw Data Expander
-with st.expander("View Raw Logic Output"):
-
-    st.write("Backtest ran on local CSV data from `data/` folder.")
-    st.json(metrics)

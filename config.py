@@ -21,3 +21,10 @@ SLIPPAGE = 10  # 10% slippage tolerance
 PANCAKE_ROUTER_ADDRESS = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
 # WBNB Address
 WBNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+
+# --- NOTIFICATIONS ---
+TELEGRAM_TOKEN = "" # User to fill: "123456789:ABC..."
+TELEGRAM_CHAT_ID = "" # User to fill: "-100..."
+
+# --- SYSTEM ---
+WATCHLIST_FILE = "watchlist.json" # For Dashboard Visibility
