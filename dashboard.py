@@ -105,12 +105,22 @@ elif page_mode == "Strategy Backtest":
     results = get_results()
     
     # --- Category Filter ---
-    # Hardcoded mapping for demo purposes (would ideally come from config)
+    # Detailed Mapping for the Pigeon Shortlist + Benchmarks
     TOKEN_CATEGORIES = {
-        'BTC': 'Large Cap', 'ETH': 'Large Cap', 'SOL': 'Large Cap',
-        'LINK': 'Mid Cap', 'UNI': 'Mid Cap', 'DOT': 'Mid Cap', 'AVAX': 'Large Cap',
-        'FET': 'Mid Cap', 'RNDR': 'Mid Cap', 'INJ': 'Mid Cap', 'AAVE': 'Mid Cap',
-        'ALPACA': 'Micro Cap', 'GALA': 'Small Cap', 'SAND': 'Mid Cap'
+        # Benchmarks
+        'BTC': 'Benchmark', 'ETH': 'Benchmark', 'BNB': 'Benchmark', 'SOL': 'Benchmark',
+        
+        # Pigeon Shortlist (Blue Chips / Upper Mid)
+        'LINK': 'Pigeon Shortlist', 'UNI': 'Pigeon Shortlist', 'DOT': 'Pigeon Shortlist', 
+        'AVAX': 'Pigeon Shortlist', 'NEAR': 'Pigeon Shortlist', 'FTM': 'Pigeon Shortlist',
+        'OP': 'Pigeon Shortlist', 'ARB': 'Pigeon Shortlist', 'FET': 'Pigeon Shortlist',
+        'RNDR': 'Pigeon Shortlist', 'SAND': 'Pigeon Shortlist', 'MANA': 'Pigeon Shortlist',
+        'AAVE': 'Pigeon Shortlist', 'INJ': 'Pigeon Shortlist', 'IMX': 'Pigeon Shortlist',
+        'GALA': 'Pigeon Shortlist', 'AXS': 'Pigeon Shortlist', 'THETA': 'Pigeon Shortlist',
+        'ENJ': 'Pigeon Shortlist', 'CHZ': 'Pigeon Shortlist',
+        
+        # Others
+        'ALPACA': 'Micro Cap', 'PEPE': 'Meme'
     }
     
     categories = ["All"] + sorted(list(set(TOKEN_CATEGORIES.values())))
