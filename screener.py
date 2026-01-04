@@ -91,34 +91,51 @@ def classify_tier(mcap):
     elif mcap > 1_000_000_000: return 'lower_mid'
     else: return 'small'
 
+def score_candidate(coin):
+    """Rank candidates to ensure we always get the best 20 available."""
+    score = 100 # Base score
+    
+    # 1. Tier Bonus (Preference for liquidity/reliability)
+    # Mid Caps are the sweet spot, Large Caps are safe anchors
+    if coin['tier'] in ['core_mid', 'upper_mid']: score += 30
+    if coin['tier'] == 'large': score += 20
+    
+    # 2. Opportunity Bonus (Preference for crashes)
+    # 50% Dip = +25 points. 90% Dip = +45 points.
+    score += coin['dip_pct'] * 0.5
+    
+    # 3. Quality Bonus (Metadata) - Soft impact
+    # Use 0 if None to handle missing data safely
+    score += (coin.get('dev_score', 0) or 0) * 0.2
+    score += (coin.get('liq_score', 0) or 0) * 0.2
+    
+    # 4. Expert Bonus (Flash Crash detection)
+    if coin.get('is_flash_crash'): score += 50 
+    
+    # 5. Age Penalty (Slight penalty for very young coins)
+    if coin.get('age_years', 0) < 3.0: score -= 10
+    
+    return score
+
 def balance_watchlist(candidates):
-    """Ensure proper tier distribution: Large 20%, Upper Mid 30%, Core 35%, Lower 10%, Small 5%"""
-    
-    # Sort purely by dip (opportunity size) for now
-    candidates.sort(key=lambda x: x['dip_pct'], reverse=True)
-    
-    target_dist = {
-        'large': 0.20,
-        'upper_mid': 0.30,
-        'core_mid': 0.35, # The sweet spot
-        'lower_mid': 0.10,
-        'small': 0.05
-    }
-    
-    final_list = []
-    target_total = MAX_CANDIDATES
-    
-    tier_buckets = {k: [] for k in target_dist.keys()}
-    
+    """
+    OLD: Enforced strict tier % (Rejected valid tokens).
+    NEW: Returns Top N candidates by Score.
+    """
+    # 1. Score every candidate
     for c in candidates:
-        tier_buckets[c['tier']].append(c)
+        c['signal_score'] = score_candidate(c)
         
-    for tier, pct in target_dist.items():
-        count = max(1, int(target_total * pct)) # Ensure at least 1 per tier if available
-        available = tier_buckets[tier]
-        final_list.extend(available[:count])
-        
-    return final_list[:target_total]
+    # 2. Sort by Score (Highest first)
+    candidates.sort(key=lambda x: x['signal_score'], reverse=True)
+    
+    # 3. Return Top N (Ensures we never return an empty list if ANY candidates exist)
+    final_list = candidates[:MAX_CANDIDATES]
+    
+    # Log the scores for debugging
+    print(f"DEBUG: Top Candidate Score: {final_list[0]['signal_score']:.1f} ({final_list[0]['symbol']})")
+    
+    return final_list
 
 def screen_candidates():
     print(f"--- STARTING SCREENER (INTELLIGENCE MODE) ---")
