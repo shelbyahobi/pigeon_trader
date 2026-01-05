@@ -65,7 +65,17 @@ def run_all_strategies():
                 if strat.name == 'Narrative Ignition Asymmetry' and 'high' not in df.columns:
                     raise ValueError("Missing High/Low data for NIA")
                 
+                # DEBUG: Trace Execution
+                if symbol == 'SOL':
+                    print(f"[{strat.name}] Running on SOL. Rows: {len(df)}")
+                    if 'total_volume' not in df.columns:
+                        print(f"  ⚠️ MISSING total_volume!")
+                
                 roi, equity_curve = strat.run(df)
+                
+                if symbol == 'SOL':
+                     print(f"  -> Result ROI: {roi}% Equity Ends: {equity_curve.iloc[-1] if not equity_curve.empty else 'EMPTY'}")
+
                 results[symbol][strat.name] = {
                     'roi': roi,
                     'equity_curve': equity_curve
