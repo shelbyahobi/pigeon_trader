@@ -61,6 +61,27 @@ class EchoStrategy(BaseStrategy):
         if current_pos_price:
             # Dynamic Trailing Stop (1.5x ATR)
             # Expert Rule: "Loosen stop if pumping, tighten if stalling" - complex, keeping 1.5x ATR for simplicity
+            
+            # --- NEW EXIT LOGIC (Fix #2) ---
+            import time
+            pnl_pct = (price - current_pos_price) / current_pos_price
+            
+            # 1. Hard Profit Target (+25%) - Secure the bag
+            if pnl_pct > 0.25:
+                return 'SELL'
+                
+            # 2. Time Stop (7 days if < 10% profit) - Don't hold dead money
+            entry_timestamp = context.get('entry_timestamp', time.time())
+            # Default to now (0 days held) if missing, to be safe
+            if not entry_timestamp: entry_timestamp = time.time()
+            
+            days_held = (time.time() - float(entry_timestamp)) / 86400
+            
+            if days_held > 7 and pnl_pct < 0.10:
+                print(f"  --> TIME STOP: Held {days_held:.1f} days with low profit ({pnl_pct:.1%})")
+                return 'SELL'
+
+            # 3. Trailing Stop
             atr = row['atr'] if not pd.isna(row['atr']) else price * 0.05
             
             # Highest price since entry is tracked by bot

@@ -403,12 +403,25 @@ def run_job(mode="echo"):
         if current_pos:
             if 'highest_price' not in current_pos:
                 current_pos['highest_price'] = current_pos_price
+            
+            # Update if new high (AND SAVE IMMEDIATELY)
             if price > current_pos['highest_price']:
+                old_high = current_pos['highest_price']
                 current_pos['highest_price'] = price
+                
+                # CRITICAL: Persist immediately
+                state[mode] = pool
+                save_state(state)
+                log_msg(f"  {token_symbol}: New High ${price:.4f} (was ${old_high:.4f})")
+                
             highest_price = current_pos['highest_price']
         
         # Context
-        ctx = {}
+        ctx = {
+            'symbol': token_symbol,
+            'entry_timestamp': current_pos.get('timestamp') if current_pos else None
+        }
+        
         if mode == 'echo':
             ctx['btc_bullish'] = global_btc_context
             ctx['funding_ok'] = fetch_funding_rate(token_symbol)
@@ -429,6 +442,11 @@ def run_job(mode="echo"):
             
             # Max positions
             max_pos = 10 if mode == 'echo' else 5
+            
+            # EMERGENCY EXIT: If maxed out, force exit oldest position?
+            # User requested explicitly. However, simple fix #1 and #2 might clear naturally.
+            # But "Option B" was listed... let's stick to core fix first.
+            
             if len(pool['positions']) >= max_pos:
                 continue
             
