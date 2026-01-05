@@ -7,6 +7,8 @@ from strategies.echo import EchoStrategy
 from strategies.nia import NIAStrategy
 from strategies.ler import LERStrategy
 
+DATA_DIR = 'data'
+
 def load_all_data():
     """Loads all CSVs from data/ directory."""
     data_map = {}
