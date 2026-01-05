@@ -5,6 +5,7 @@ from strategies.dip_buy import DipBuyStrategy
 from strategies.rsi_strategy import RSIStrategy
 from strategies.echo import EchoStrategy
 from strategies.nia import NIAStrategy
+from strategies.ler import LERStrategy
 
 def load_all_data():
     """Loads all CSVs from data/ directory."""
@@ -31,6 +32,7 @@ def run_all_strategies():
     strategies = [
         EchoStrategy(),
         NIAStrategy(),
+        LERStrategy(),
         DipBuyStrategy(), # Baseline
         RSIStrategy()     # Baseline
     ]

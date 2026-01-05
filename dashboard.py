@@ -104,6 +104,9 @@ elif page_mode == "Strategy Backtest":
     
     results = get_results()
     
+    # --- Debug / Health Check ---
+    st.sidebar.info(f"Loaded {len(results)} Tokens from Data")
+
     # --- Category Filter ---
     # Detailed Mapping for the Pigeon Shortlist + Benchmarks
     TOKEN_CATEGORIES = {
