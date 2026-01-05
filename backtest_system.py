@@ -11,8 +11,10 @@ DATA_DIR = 'data'
 
 def load_all_data():
     """Loads all CSVs from data/ directory."""
+    print(f"DEBUG: CWD is {os.getcwd()}")
     data_map = {}
     files = glob.glob(f"{DATA_DIR}/*_history.csv")
+    print(f"DEBUG: Found {len(files)} files in {DATA_DIR}/*_history.csv")
     for f in files:
         # Extract symbol from filename "data\\CAKE_history.csv"
         symbol = os.path.basename(f).replace('_history.csv', '')
