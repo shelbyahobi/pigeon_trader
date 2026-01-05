@@ -52,11 +52,23 @@ def run_all_strategies():
     for symbol, df in data_map.items():
         results[symbol] = {}
         for strat in strategies:
-            roi, equity_curve = strat.run(df)
-            results[symbol][strat.name] = {
-                'roi': roi,
-                'equity_curve': equity_curve
-            }
+            try:
+                # Pre-check for required columns (Soft check)
+                if strat.name == 'Narrative Ignition Asymmetry' and 'high' not in df.columns:
+                    raise ValueError("Missing High/Low data for NIA")
+                
+                roi, equity_curve = strat.run(df)
+                results[symbol][strat.name] = {
+                    'roi': roi,
+                    'equity_curve': equity_curve
+                }
+            except Exception as e:
+                # Log error but don't crash dashboard
+                print(f"⚠️ Error with {strat.name} on {symbol}: {e}")
+                results[symbol][strat.name] = {
+                    'roi': 0.0,
+                    'equity_curve': pd.Series()
+                }
             
     return results
 
