@@ -155,6 +155,11 @@ elif page_mode == "Strategy Backtest":
                     "ROI %": f"{res['roi']:.2f}%"
                 })
             st.table(pd.DataFrame(metrics))
+            
+            # Show Errors if any
+            for name, res in strats.items():
+                if 'error' in res:
+                    st.error(f"⚠️ {name}: {res['error']}")
 
         with col2:
             st.subheader("Equity Curves")

@@ -75,7 +75,8 @@ def run_all_strategies():
                 print(f"⚠️ Error with {strat.name} on {symbol}: {e}")
                 results[symbol][strat.name] = {
                     'roi': 0.0,
-                    'equity_curve': pd.Series()
+                    'equity_curve': pd.Series(),
+                    'error': str(e)  # Pass error to UI
                 }
             
     return results
