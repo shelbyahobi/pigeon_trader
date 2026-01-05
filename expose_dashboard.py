@@ -4,6 +4,9 @@ import threading
 import time
 from pyngrok import ngrok
 
+# Force unbuffered output so logs show up immediately
+sys.stdout.reconfigure(line_buffering=True)
+
 def launch_dashboard():
     print("🚀 Starting Dashboard...")
     os.system("streamlit run dashboard.py --server.port 8501 --server.address 0.0.0.0 > dash.log 2>&1")
@@ -33,7 +36,8 @@ if __name__ == "__main__":
     
     # Start Streamlit
     print("🚀 Launching Streamlit...")
-    subprocess.Popen(["streamlit", "run", "dashboard.py", "--server.port", "8501", "--server.address", "0.0.0.0"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Remove DEVNULL so logs appear in dashboard.log
+    subprocess.Popen(["streamlit", "run", "dashboard.py", "--server.port", "8501", "--server.address", "0.0.0.0"])
     
     # Start Ngrok
     print("🌍 Establishing Secure Tunnel...")
