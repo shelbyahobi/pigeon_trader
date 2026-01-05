@@ -51,105 +51,120 @@ class EchoStrategy(BaseStrategy):
     def get_signal(self, df, current_pos_price=None, highest_price=None, mode="echo", context={}):
         """
         Live Signal Generation for Strategic Bot.
+        Implements 'Lifecycle Exit Framework' for Production Safety.
         """
-        if len(df) < 180: return 'HOLD'
+        if len(df) < 20: return 'HOLD' # Use 20 for logic, handled by df length check
         
         df = self.calculate_indicators(df.copy())
         row = df.iloc[-1]
         price = row['price']
+        symbol = context.get('symbol', 'UNKNOWN')
         
-        # --- SELL LOGIC ---
+        # --- 1. SELL LOGIC (PRIORITY) ---
         if current_pos_price:
-            # Dynamic Trailing Stop (1.5x ATR)
-            # Expert Rule: "Loosen stop if pumping, tighten if stalling" - complex, keeping 1.5x ATR for simplicity
-            
-            # --- NEW EXIT LOGIC (Fix #2) ---
             import time
-            pnl_pct = (price - current_pos_price) / current_pos_price
+            from datetime import datetime
             
-            # 1. Hard Profit Target (+25%) - Secure the bag
-            if pnl_pct > 0.25:
-                return 'SELL'
-                
-            # 2. Time Stop (7 days if < 10% profit) - Don't hold dead money
+            # --- CONTEXT ---
             entry_timestamp = context.get('entry_timestamp', time.time())
-            # Default to now (0 days held) if missing, to be safe
             if not entry_timestamp: entry_timestamp = time.time()
             
             days_held = (time.time() - float(entry_timestamp)) / 86400
+            pnl_pct = (price - current_pos_price) / current_pos_price
             
-            if days_held > 7 and pnl_pct < 0.10:
-                print(f"  --> TIME STOP: Held {days_held:.1f} days with low profit ({pnl_pct:.1%})")
-                return 'SELL'
-
-            # 3. Trailing Stop
+            # ATR Handling
             atr = row['atr'] if not pd.isna(row['atr']) else price * 0.05
+            if not highest_price: highest_price = current_pos_price
             
-            # Highest price since entry is tracked by bot
-            stop_price = highest_price - (1.5 * atr)
+            # --- DIAGNOSTICS ---
+            # Print heartbeat to prove we are evaluating exits
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] EXIT CHECK {symbol}: PnL {pnl_pct:+.2%} | Held {days_held:.1f}d | High ${highest_price:.2f}")
+
+            # --- LIFECYCLE STAGES ---
+            exit_reason = None
             
-            # Hard Stop (-15%)
-            hard_stop = current_pos_price * 0.85
-            
-            if price < max(stop_price, hard_stop):
-                return 'SELL'
+            # STAGE 1: INFANCY (0-3 Days) -> SURVIVE
+            if days_held < 3:
+                # Wide Stops Only
+                hard_stop = current_pos_price * 0.90 # -10% Hard Stop
+                vol_stop = highest_price - (2.0 * atr) # Loose Trailing
                 
-        # --- BUY LOGIC ---
-        # --- BUY LOGIC ---
+                if price < hard_stop: exit_reason = f"Infancy Hard Stop (-10%)"
+                elif price < vol_stop: exit_reason = f"Infancy Vol Stop (-2 ATR)"
+                
+            # STAGE 2: ADOLESCENCE (3-7 Days) -> PROVE WORTH
+            elif days_held < 7:
+                # Must be profitable by now
+                if pnl_pct < 0: exit_reason = f"Adolescence Time Stop (PnL < 0%)"
+                
+                # Tighten Stops
+                vol_stop = highest_price - (1.5 * atr)
+                if price < vol_stop: exit_reason = f"Adolescence Trailing (-1.5 ATR)"
+                
+                # Take Profit?
+                if pnl_pct > 0.15: exit_reason = f"Adolescence Profit Target (+15%)"
+                
+            # STAGE 3: MATURITY (7-14 Days) -> HARVEST
+            elif days_held < 14:
+                # Must be winning significantly
+                if pnl_pct < 0.05: exit_reason = f"Maturity Time Stop (PnL < 5%)"
+                
+                # Very Tight Stops
+                vol_stop = highest_price - (1.0 * atr)
+                if price < vol_stop: exit_reason = f"Maturity Trailing (-1.0 ATR)"
+                
+            # STAGE 4: EXPIRY (14+ Days) -> RECYCLE
+            else:
+                exit_reason = f"Expiry Force Exit (>14 Days)"
+            
+            # GLOBAL: Hard Profit Target (Moonbag)
+            if pnl_pct > 0.30:
+                exit_reason = f"Global Profit Target (+30%)"
+            
+            # --- EXECUTION ---
+            if exit_reason:
+                print(f"  --> SELL SIGNAL for {symbol}: {exit_reason}")
+                return 'SELL'
+            else:
+                # Log why we held (Verbose)
+                # print(f"  -> HOLDing {symbol} (No exit condition met)")
+                return 'HOLD'
+
+        # --- 2. BUY LOGIC ---
         else:
-            # 1. Context Filters (Passed via context dict)
-            btc_bullish = context.get('btc_bullish', True) # Default True if check fails
-            funding_ok = context.get('funding_ok', True)   # Default True
+            # Context Filters
+            btc_bullish = context.get('btc_bullish', True)
+            funding_ok = context.get('funding_ok', True)
             
-            # TEMPORARY: Comment out regime filters for testing as requested
-            # if not btc_bullish: return 'HOLD' # "Regime Awareness"
-            # if not funding_ok: return 'HOLD'  # "No Blind Spot"
-            
-            # 2. Hardened Logic: Weighted Scoring System (0-100 points)
+            # Calculate Score
             score = 0
             
-            # A. Deep Value (0-40 points)
+            # A. Deep Value (0-40)
             drawdown = row['drawdown'] if not pd.isna(row['drawdown']) else 0
-            if drawdown > 0.70:
-                score += 40
-            elif drawdown > 0.60:
-                score += 30
-            elif drawdown > 0.50:
-                score += 20
-            elif drawdown > 0.40:
-                score += 10
+            if drawdown > 0.70: score += 40
+            elif drawdown > 0.60: score += 30
+            elif drawdown > 0.50: score += 20
+            elif drawdown > 0.40: score += 10
             
-            # B. Volatility Squeeze (0-35 points)
+            # B. Squeeze (0-35)
             bb_rank = row['bb_width_rank'] if not pd.isna(row['bb_width_rank']) else 1.0
-            if bb_rank < 0.15:
-                score += 35
-            elif bb_rank < 0.25:
-                score += 25
-            elif bb_rank < 0.35:
-                score += 15
-            elif bb_rank < 0.50:
-                score += 5
+            if bb_rank < 0.15: score += 35
+            elif bb_rank < 0.25: score += 25
+            elif bb_rank < 0.35: score += 15
+            elif bb_rank < 0.50: score += 5
             
-            # C. Volume Signal (0-25 points)
+            # C. Volume (0-25)
             vol_signal = row.get('vol_signal', False)
-            if vol_signal:
-                score += 25
-            else:
-                # Partial credit for spike without rising trend
-                vol_spike = row.get('vol_spike', False)
-                if vol_spike:
-                    score += 12
+            if vol_signal: score += 25
+            elif row.get('vol_spike', False): score += 12
             
-            # Debug Logic: Log Score to bot.log
-            # We print because nohup redirects stdout to bot.log
-            symbol = context.get('symbol', 'UNKNOWN')
-            from datetime import datetime
-            
-            # Only log interesting scores to avoid spam
+            # Debug Logic
             if score > 20: 
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: Score={score:.0f} (DD:{drawdown:.0%}, BB:{bb_rank:.0%}, Vol:{vol_signal})")
+                # Avoid spamming logs unless interesting
+                # print(f"[{symbol}] Score={score}")
+                pass
 
-            # BUY if score >= 45 (Testing Threshold)
+            # BUY Trigger
             if score >= 45:
                 print(f"  --> BUY TRIGGERED for {symbol} (Score {score})")
                 return 'BUY'
