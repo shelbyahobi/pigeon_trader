@@ -196,7 +196,7 @@ class EchoStrategy(BaseStrategy):
                 
                 if price < exit_price:
                     # SELL
-                    capital = position['amount'] * price
+                    capital += position['amount'] * price
                     position = None
             
             # --- ENTRY LOGIC ---
@@ -253,7 +253,7 @@ class EchoStrategy(BaseStrategy):
         # Close any open position at end
         if position:
             final_price = df.iloc[-1]['price']
-            capital = position['amount'] * final_price
+            capital += position['amount'] * final_price
         
         # Calculate ROI
         roi = (capital - self.capital) / self.capital
