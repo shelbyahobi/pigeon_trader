@@ -24,6 +24,10 @@ def load_all_data():
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         
+        # Alias 'volume' to 'total_volume' for ECHO/LER compatibility
+        if 'volume' in df.columns:
+            df['total_volume'] = df['volume']
+            
         # Drop rows with NaN prices
         df.dropna(subset=['price'], inplace=True)
         
