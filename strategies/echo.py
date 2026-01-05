@@ -9,6 +9,7 @@ class EchoStrategy(BaseStrategy):
         self.bb_std = bb_std
         self.squeeze_threshold = squeeze_threshold
         self.atr_period = atr_period
+        self.capital = 1000.0 # Default Capital for Backtest
 
     def calculate_indicators(self, df):
         # 1. Bollinger Bands
@@ -156,36 +157,35 @@ class EchoStrategy(BaseStrategy):
         return 'HOLD'
 
     def run(self, df):
-        # 1. Pre-calculate indicators (Simulate "what the bot sees")
+        """
+        Backtest the Echo strategy on historical data
+        Returns: (ROI, equity_series)
+        """
+        # 1. Pre-calculate indicators
         df = self.calculate_indicators(df.copy())
         
         capital = self.capital
-        position = None # {entry, amount, peak_price}
+        position = None  # {entry, amount, peak_price}
         equity_curve = []
         
-        # Start after warm-up period (need ~180 days for bb_rank)
+        # Start after warm-up period
         start_idx = 180
         if len(df) < start_idx:
-             # Handle short history gracefully
-             start_idx = 20
+            start_idx = 20
         
         # Fill equity for warmup
-        for _ in range(start_idx): equity_curve.append(capital)
-            
+        for _ in range(start_idx):
+            equity_curve.append(capital)
+        
         for i in range(start_idx, len(df)):
             row = df.iloc[i]
             price = row['price']
-            date = df.index[i]
             
             # --- MANAGE POSITION ---
             if position:
                 # Update Peak
                 if price > position['peak_price']:
                     position['peak_price'] = price
-                    
-                # 1. Take Profit (Scaled) - Simplified for Backtest
-                # In live bot, we might scale out. Here let's model a simple "Trailing Stop" based exit.
-                # Strategy: Hold until Trailing Stop or Hard Stop hits.
                 
                 # Check Stops
                 atr = row['atr'] if not pd.isna(row['atr']) else price * 0.05
@@ -195,54 +195,68 @@ class EchoStrategy(BaseStrategy):
                 exit_price = max(stop_price, hard_stop)
                 
                 if price < exit_price:
-                    # SELL SIGNAL
+                    # SELL
                     capital = position['amount'] * price
                     position = None
-                    equity_curve.append(capital)
-                    continue
-                    
+            
             # --- ENTRY LOGIC ---
             else:
-                # Use EXACT same Scoring Logic as get_signal
                 score = 0
                 
-                # A. Deep Value
+                # A. Deep Value (0-40 points)
                 drawdown = row['drawdown'] if not pd.isna(row['drawdown']) else 0
-                if drawdown > 0.70: score += 40
-                elif drawdown > 0.60: score += 30
-                elif drawdown > 0.50: score += 20
-                elif drawdown > 0.40: score += 10
+                if drawdown > 0.70:
+                    score += 40
+                elif drawdown > 0.60:
+                    score += 30
+                elif drawdown > 0.50:
+                    score += 20
+                elif drawdown > 0.40:
+                    score += 10
                 
-                # B. Squeeze
+                # B. Volatility Squeeze (0-35 points)
                 bb_rank = row['bb_width_rank'] if not pd.isna(row['bb_width_rank']) else 1.0
-                if bb_rank < 0.15: score += 35
-                elif bb_rank < 0.25: score += 25
-                elif bb_rank < 0.35: score += 15
-                elif bb_rank < 0.50: score += 5
+                if bb_rank < 0.15:
+                    score += 35
+                elif bb_rank < 0.25:
+                    score += 25
+                elif bb_rank < 0.35:
+                    score += 15
+                elif bb_rank < 0.50:
+                    score += 5
                 
-                # C. Volume
+                # C. Volume Signal (0-25 points)
                 vol_signal = row.get('vol_signal', False)
-                if vol_signal: score += 25
+                if vol_signal:
+                    score += 25
                 else:
-                    if row.get('vol_spike', False): score += 12
-                    
-                # Threshold
-                if score >= 45:
-                    # BUY
+                    vol_spike = row.get('vol_spike', False)
+                    if vol_spike:
+                        score += 12
+                
+                # BUY if score >= 45
+                if score >= 45 and capital > 10:
+                    bet_size = capital * 0.05  # 5% position
+                    amount = bet_size / price
                     position = {
                         'entry': price,
-                        'amount': capital / price,
+                        'amount': amount,
                         'peak_price': price
                     }
-                    capital = 0 # All in
-                    
-            # Track Equity
-            val = capital
-            if position:
-                val = position['amount'] * price
-            equity_curve.append(val)
+                    capital -= bet_size
             
-        # Calc Stats
-        final_val = equity_curve[-1]
-        roi = ((final_val - self.capital) / self.capital) * 100
-        return roi, pd.Series(equity_curve, index=df.index)
+            # Update equity curve
+            position_value = position['amount'] * price if position else 0
+            equity = capital + position_value
+            equity_curve.append(equity)
+        
+        # Close any open position at end
+        if position:
+            final_price = df.iloc[-1]['price']
+            capital = position['amount'] * final_price
+        
+        # Calculate ROI
+        roi = (capital - self.capital) / self.capital
+        equity_series = pd.Series(equity_curve, index=df.index)
+        
+        return roi, equity_series
