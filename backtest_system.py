@@ -19,10 +19,10 @@ def load_all_data():
         df = pd.read_csv(f)
         df['date'] = pd.to_datetime(df['date'])
         df.set_index('date', inplace=True)
-        # Force numeric types (handle strings from CSV)
-        df['price'] = pd.to_numeric(df['price'], errors='coerce')
-        if 'volume' in df.columns:
-            df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
+        # Force numeric types (handle strings from CSV) for ALL columns
+        for col in ['price', 'volume', 'high', 'low', 'open']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
         
         # Drop rows with NaN prices
         df.dropna(subset=['price'], inplace=True)
