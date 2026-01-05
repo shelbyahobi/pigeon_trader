@@ -73,33 +73,155 @@ class EchoStrategy(BaseStrategy):
                 return 'SELL'
                 
         # --- BUY LOGIC ---
+        # --- BUY LOGIC ---
         else:
             # 1. Context Filters (Passed via context dict)
             btc_bullish = context.get('btc_bullish', True) # Default True if check fails
             funding_ok = context.get('funding_ok', True)   # Default True
             
-            if not btc_bullish: return 'HOLD' # "Regime Awareness"
-            if not funding_ok: return 'HOLD'  # "No Blind Spot"
+            # TEMPORARY: Comment out regime filters for testing as requested
+            # if not btc_bullish: return 'HOLD' # "Regime Awareness"
+            # if not funding_ok: return 'HOLD'  # "No Blind Spot"
             
-            # 2. Hardened Logic
-            # A. Deep Value (-60%)
-            is_deep = row['drawdown'] > 0.60
+            # 2. Hardened Logic: Weighted Scoring System (0-100 points)
+            score = 0
             
-            # B. Squeeze (Percentile based)
-            # < 20th Percentile of past 6 months
-            is_squeeze = row['bb_width_rank'] < 0.20
+            # A. Deep Value (0-40 points)
+            drawdown = row['drawdown'] if not pd.isna(row['drawdown']) else 0
+            if drawdown > 0.70:
+                score += 40
+            elif drawdown > 0.60:
+                score += 30
+            elif drawdown > 0.50:
+                score += 20
+            elif drawdown > 0.40:
+                score += 10
             
-            # C. Volume Trend
-            is_vol_trend = row['vol_signal']
+            # B. Volatility Squeeze (0-35 points)
+            bb_rank = row['bb_width_rank'] if not pd.isna(row['bb_width_rank']) else 1.0
+            if bb_rank < 0.15:
+                score += 35
+            elif bb_rank < 0.25:
+                score += 25
+            elif bb_rank < 0.35:
+                score += 15
+            elif bb_rank < 0.50:
+                score += 5
             
-            if is_deep and is_squeeze and is_vol_trend:
+            # C. Volume Signal (0-25 points)
+            vol_signal = row.get('vol_signal', False)
+            if vol_signal:
+                score += 25
+            else:
+                # Partial credit for spike without rising trend
+                vol_spike = row.get('vol_spike', False)
+                if vol_spike:
+                    score += 12
+            
+            # Debug Logic: Log Score to bot.log
+            # We print because nohup redirects stdout to bot.log
+            symbol = context.get('symbol', 'UNKNOWN')
+            from datetime import datetime
+            
+            # Only log interesting scores to avoid spam
+            if score > 20: 
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] {symbol}: Score={score:.0f} (DD:{drawdown:.0%}, BB:{bb_rank:.0%}, Vol:{vol_signal})")
+
+            # BUY if score >= 45 (Testing Threshold)
+            if score >= 45:
+                print(f"  --> BUY TRIGGERED for {symbol} (Score {score})")
                 return 'BUY'
                 
         return 'HOLD'
 
     def run(self, df):
-        # Backtest wrapper (simplified)
+        # 1. Pre-calculate indicators (Simulate "what the bot sees")
         df = self.calculate_indicators(df.copy())
-        # ... (Rest of backtest logic would go here, simulating context is hard without extensive data)
-        # For now, preserving structure for get_signal to work
-        return 0, pd.Series()
+        
+        capital = self.capital
+        position = None # {entry, amount, peak_price}
+        equity_curve = []
+        
+        # Start after warm-up period (need ~180 days for bb_rank)
+        start_idx = 180
+        if len(df) < start_idx:
+             # Handle short history gracefully
+             start_idx = 20
+        
+        # Fill equity for warmup
+        for _ in range(start_idx): equity_curve.append(capital)
+            
+        for i in range(start_idx, len(df)):
+            row = df.iloc[i]
+            price = row['price']
+            date = df.index[i]
+            
+            # --- MANAGE POSITION ---
+            if position:
+                # Update Peak
+                if price > position['peak_price']:
+                    position['peak_price'] = price
+                    
+                # 1. Take Profit (Scaled) - Simplified for Backtest
+                # In live bot, we might scale out. Here let's model a simple "Trailing Stop" based exit.
+                # Strategy: Hold until Trailing Stop or Hard Stop hits.
+                
+                # Check Stops
+                atr = row['atr'] if not pd.isna(row['atr']) else price * 0.05
+                stop_price = position['peak_price'] - (1.5 * atr)
+                hard_stop = position['entry'] * 0.85
+                
+                exit_price = max(stop_price, hard_stop)
+                
+                if price < exit_price:
+                    # SELL SIGNAL
+                    capital = position['amount'] * price
+                    position = None
+                    equity_curve.append(capital)
+                    continue
+                    
+            # --- ENTRY LOGIC ---
+            else:
+                # Use EXACT same Scoring Logic as get_signal
+                score = 0
+                
+                # A. Deep Value
+                drawdown = row['drawdown'] if not pd.isna(row['drawdown']) else 0
+                if drawdown > 0.70: score += 40
+                elif drawdown > 0.60: score += 30
+                elif drawdown > 0.50: score += 20
+                elif drawdown > 0.40: score += 10
+                
+                # B. Squeeze
+                bb_rank = row['bb_width_rank'] if not pd.isna(row['bb_width_rank']) else 1.0
+                if bb_rank < 0.15: score += 35
+                elif bb_rank < 0.25: score += 25
+                elif bb_rank < 0.35: score += 15
+                elif bb_rank < 0.50: score += 5
+                
+                # C. Volume
+                vol_signal = row.get('vol_signal', False)
+                if vol_signal: score += 25
+                else:
+                    if row.get('vol_spike', False): score += 12
+                    
+                # Threshold
+                if score >= 45:
+                    # BUY
+                    position = {
+                        'entry': price,
+                        'amount': capital / price,
+                        'peak_price': price
+                    }
+                    capital = 0 # All in
+                    
+            # Track Equity
+            val = capital
+            if position:
+                val = position['amount'] * price
+            equity_curve.append(val)
+            
+        # Calc Stats
+        final_val = equity_curve[-1]
+        roi = ((final_val - self.capital) / self.capital) * 100
+        return roi, pd.Series(equity_curve, index=df.index)
