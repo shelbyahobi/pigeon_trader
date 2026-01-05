@@ -17,6 +17,10 @@ def load_all_data():
         # Extract symbol from filename "data\\CAKE_history.csv"
         symbol = os.path.basename(f).replace('_history.csv', '')
         df = pd.read_csv(f)
+        
+        # 1. Normalize columns to lowercase (Fixes High/High/HIGH issues)
+        df.columns = [c.lower() for c in df.columns]
+        
         df['date'] = pd.to_datetime(df['date'])
         df.set_index('date', inplace=True)
         # Force numeric types (handle strings from CSV) for ALL columns
