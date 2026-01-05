@@ -197,6 +197,28 @@ def update_watchlist():
             log_msg(f"⚠️ Screener yielded only {len(candidates)} tokens (Min: {min_candidates}). Using Fallback Watchlist (20 tokens).")
             candidates = get_fallback_watchlist()
             
+            # Enrich Fallback with Live Metrics (1 API Call)
+            try:
+                ids = ",".join([c['id'] for c in candidates])
+                url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids}&vs_currencies=usd&include_24hr_change=true"
+                r = requests.get(url, timeout=10)
+                if r.status_code == 200:
+                    data = r.json()
+                    for c in candidates:
+                        mid = c['id']
+                        if mid in data:
+                            # 'usd_24h_change' can be positive or negative.
+                            # dip_pct is typically how much it's DOWN from high, but here 
+                            # we will use -1 * change as a proxy for "dip" if negative, or justraw change?
+                            # Dashboard expects "dip_pct" to display.
+                            # If change is -5%, dip_pct = 5.0 (Positive number representing dip depth)
+                            change = data[mid].get('usd_24h_change', 0)
+                            c['dip_pct'] = -change if change < 0 else 0
+                else:
+                    log_msg(f"Warning: Could not enrich fallback data (Status {r.status_code})")
+            except Exception as e:
+                log_msg(f"Error enriching fallback metrics: {e}")
+            
         TOKENS = {}
         count = 0 
         for c in candidates:
