@@ -241,6 +241,44 @@ def update_watchlist():
             
     except Exception as e:
         log_msg(f"Error updating watchlist: {e}")
+        
+        # --- API RESILIENCE HOTFIX (Phase 30) ---
+        # If API fails (e.g. 429), we MUST still populate TOKENS with:
+        # 1. Existing Positions (So we can sell them)
+        # 2. Fallback Watchlist (So we can buy if possible)
+        # Otherwise the bot is blind.
+        
+        log_msg("⚠️ API ERROR: Engaging Emergency Fallback Protocol.")
+        TOKENS = {}
+        
+        # 1. Add Fallback List (For Buying)
+        fb = get_fallback_watchlist()
+        for c in fb:
+            TOKENS[c['id']] = ['echo', 'nia']
+            
+        # 2. Add Open Positions (For Selling)
+        # We need to read state manually since we are outside the loop
+        try:
+             # Assuming global 'load_state' logic usage or reuse local awareness
+             # But 'load_state' is defined below. 
+             # We will just ensure fallback is enough, since Fallback COVERS most open positions anyway.
+             # Only risk: If we hold a token NOT in fallback.
+             # Let's verify: Fallback has 20 major tokens. User likely owns one of these.
+             # If user owns "Old Rare Coin", it might be missed.
+             # Better: Read from strategic_state.json if possible.
+             if os.path.exists(STATE_FILE):
+                with open(STATE_FILE, 'r') as f:
+                    st = json.load(f)
+                    for pool_name in ['echo', 'nia']:
+                        if pool_name in st and 'positions' in st[pool_name]:
+                            for pid in st[pool_name]['positions']:
+                                if pid not in TOKENS:
+                                    TOKENS[pid] = ['echo'] # Default to echo logic for exit
+                                    log_msg(f"  + Rescued position: {pid}")
+        except Exception as ex:
+             log_msg(f"Could not rescue positions: {ex}")
+             
+        log_msg(f"Emergency Watchlist engaged: {len(TOKENS)} tokens.")
 
 # --- MARKET DATA ---
 def fetch_market_data(token_ids):
