@@ -161,6 +161,27 @@ elif page_mode == "Strategy Backtest":
                 if 'error' in res:
                     st.error(f"⚠️ {name}: {res['error']}")
 
+            # --- DEBUGGER ---
+            with st.expander("🛠️ Data Diagnostics (Click to debug 0%)"):
+                debug = strats.get('_debug', {})
+                if debug:
+                    st.write(f"**Rows:** {debug.get('rows')} | **Columns:** {debug.get('columns')}")
+                    
+                    cols = debug.get('columns', [])
+                    missing = []
+                    for req in ['total_volume', 'high', 'low', 'price']:
+                        if req not in cols: missing.append(req)
+                    
+                    if missing:
+                        st.error(f"❌ Missing Critical Columns: {missing}")
+                    else:
+                        st.success("✅ All Critical Columns Present")
+                        
+                    st.write("**Latest Data Sample:**")
+                    st.json(debug.get('sample_data'))
+                else:
+                    st.warning("No debug info available.")
+
         with col2:
             st.subheader("Equity Curves")
             

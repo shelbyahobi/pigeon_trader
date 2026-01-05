@@ -72,12 +72,20 @@ def run_all_strategies():
                 }
             except Exception as e:
                 # Log error but don't crash dashboard
-                print(f"⚠️ Error with {strat.name} on {symbol}: {e}")
                 results[symbol][strat.name] = {
                     'roi': 0.0,
                     'equity_curve': pd.Series(),
                     'error': str(e)  # Pass error to UI
                 }
+        
+        # Inject Debug Info for Dashboard
+        results[symbol]['_debug'] = {
+            'columns': df.columns.tolist(),
+            'rows': len(df),
+            'first_date': str(df.index[0]) if not df.empty else "N/A",
+            'last_date': str(df.index[-1]) if not df.empty else "N/A",
+            'sample_data': df.iloc[-1].to_dict() if not df.empty else {}
+        }
             
     return results
 
