@@ -19,6 +19,14 @@ def load_all_data():
         df = pd.read_csv(f)
         df['date'] = pd.to_datetime(df['date'])
         df.set_index('date', inplace=True)
+        # Force numeric types (handle strings from CSV)
+        df['price'] = pd.to_numeric(df['price'], errors='coerce')
+        if 'volume' in df.columns:
+            df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
+        
+        # Drop rows with NaN prices
+        df.dropna(subset=['price'], inplace=True)
+        
         df.sort_index(inplace=True)
         data_map[symbol] = df
     return data_map
