@@ -150,8 +150,8 @@ class LERStrategy(BaseStrategy):
                 # 2. Drawdown Context (>60% from High)
                 is_deep_value = row['drawdown'] > 0.60
                 
-                # 3. Volume filter
-                is_vol_healthy = row['vol_stable']
+                # 3. Volume filter (Using Absorption Signal as proxy for health/whale interest)
+                is_vol_healthy = row['absorption_signal']
                 
                 if is_vol_compressed and is_deep_value and is_vol_healthy:
                     # BUY
