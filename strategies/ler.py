@@ -145,10 +145,12 @@ class LERStrategy(BaseStrategy):
             else:
                 # 1. Volatility Regime Shift (Lowest Quartile)
                 # "20-day Vol drops to lowest quartile of past 180 days"
-                is_vol_compressed = row['vol_rank'] < 0.25
+                # Testing Mode: < 0.35 (Relaxed from 0.25)
+                is_vol_compressed = row['vol_rank'] < 0.35
                 
                 # 2. Drawdown Context (>60% from High)
-                is_deep_value = row['drawdown'] > 0.60
+                # Testing Mode: > 0.45 (Relaxed from 0.60)
+                is_deep_value = row['drawdown'] > 0.45
                 
                 # 3. Volume filter (Using Absorption Signal as proxy for health/whale interest)
                 is_vol_healthy = row['absorption_signal']

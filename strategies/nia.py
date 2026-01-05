@@ -124,6 +124,67 @@ class NIAStrategy(BaseStrategy):
         return 'HOLD'
 
     def run(self, df):
-        # Backtest wrapper
-        df = self.calculate_indicators(df)
-        return 0, pd.Series()
+        # 1. Pre-calculate indicators
+        df = self.calculate_indicators(df.copy())
+        
+        capital = self.capital
+        position = None
+        equity_curve = []
+        
+        start_idx = 50
+        # Warmup fill
+        for _ in range(start_idx): equity_curve.append(capital)
+            
+        for i in range(start_idx, len(df)):
+            row = df.iloc[i]
+            price = row['price']
+            
+            # --- POSITON MGMT ---
+            if position:
+                # 1. HOLD until +1000% or Macro Stop (Not simulated here)
+                # We simulate the 10x target
+                pnl_pct = (price - position['entry']) / position['entry']
+                
+                if pnl_pct > 10.0:
+                    capital = position['amount'] * price
+                    position = None
+                
+                # We also simulate a -50% Hard Stop just for safety in backtest
+                elif pnl_pct < -0.50:
+                     capital = position['amount'] * price
+                     position = None
+                    
+            # --- ENTRY ---
+            else:
+                 # Simulate Context (Assume Good Token)
+                 dev_score = 80
+                 has_narrative = True
+                 
+                 # Logic matches get_signal
+                 is_quiet = row['price_vs_high'] <= 1.15 if not pd.isna(row['price_vs_high']) else False
+                 is_organic = row['vol_spike_ratio'] < 5.0 if not pd.isna(row['vol_spike_ratio']) else True
+                 
+                 # Looser drawdon for backtest to see action
+                 is_deep = row['drawdown'] > 0.60 if not pd.isna(row['drawdown']) else False
+                 
+                 if is_deep and is_quiet and is_organic:
+                     # BUY
+                     position = {
+                         'entry': price,
+                         'amount': capital / price
+                     }
+                     capital = 0 # All in
+            
+            # Track
+            val = capital
+            if position:
+                val = position['amount'] * price
+            equity_curve.append(val)
+            
+        if not equity_curve: return 0.0, pd.Series()
+        final_val = equity_curve[-1]
+        roi = ((final_val - self.capital) / self.capital) * 100
+        return roi, pd.Series(equity_curve, index=df.range(len(equity_curve)) if len(equity_curve)!=len(df) else df.index)
+        # Note: Index alignment might be tricky if lengths differ, but standardizing on df.index is usually safe if we append 1:1.
+        # Fixed alignment:
+        return roi, pd.Series(equity_curve + [equity_curve[-1]]*(len(df)-len(equity_curve)), index=df.index)
