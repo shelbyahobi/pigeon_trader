@@ -416,9 +416,11 @@ def run_job(mode="echo"):
     log_msg(f"Processing {len(current_market_data)} tokens")
     
     # Process tokens
-    for token_id, token_symbol in TOKENS.items():
+    for token_id, strategies in TOKENS.items():
         if token_id not in current_market_data:
             continue
+        
+        token_symbol = current_market_data[token_id]['symbol']
         
         price = current_market_data[token_id]['price']
         
