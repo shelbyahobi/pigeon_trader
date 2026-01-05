@@ -58,6 +58,7 @@ def run_all_strategies():
     results = {}
     
     for symbol, df in data_map.items():
+        print(f"Running Backtest on: {symbol} ({len(df)} rows)")
         results[symbol] = {}
         for strat in strategies:
             try:
