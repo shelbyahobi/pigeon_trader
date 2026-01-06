@@ -98,10 +98,15 @@ if page_mode == "Live Monitor":
 
 elif page_mode == "Strategy Backtest":
     # Run Analysis (Cache this in a real app)
-    @st.cache_data
+    # Removing cache temporarily to ensure fresh debugging
+    # @st.cache_data 
     def get_results():
         return run_all_strategies()
     
+    if st.sidebar.button("🧹 Clear/Reload Data"):
+        st.cache_data.clear()
+        st.rerun()
+
     results = get_results()
     
     # --- Debug / Health Check ---
