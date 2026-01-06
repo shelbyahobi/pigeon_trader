@@ -106,7 +106,7 @@ if __name__ == "__main__":
     # Test run
     results = run_all_strategies()
     for token, strats in results.items():
-        print(f"--- {token} ---")
+        print(f"\n--- {token} ---")
         for strat_name, res in strats.items():
             if strat_name == '_debug':  # Skip debug info
                 continue
