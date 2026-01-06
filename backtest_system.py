@@ -108,4 +108,9 @@ if __name__ == "__main__":
     for token, strats in results.items():
         print(f"--- {token} ---")
         for strat_name, res in strats.items():
-            print(f"  {strat_name}: {res['roi']:.2f}%")
+            if strat_name == '_debug':  # Skip debug info
+                continue
+            if 'error' in res:
+                print(f"  {strat_name}: ERROR - {res['error']}")
+            else:
+                print(f"  {strat_name}: {res['roi']:.2f}%")
