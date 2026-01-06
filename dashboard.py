@@ -28,7 +28,9 @@ if page_mode == "Live Monitor":
     st.header("🔴 Live Bot Status")
     
     # Refresh Button
-    if st.button("Refresh Data"):
+    # Refresh Button
+    if st.button("Refresh Data") or st.toggle("Auto-Refresh (10s)", value=False):
+        time.sleep(10)
         st.rerun()
 
     # Load State
@@ -90,11 +92,16 @@ if page_mode == "Live Monitor":
                 st.info("No active trades.")
                 
     st.divider()
-    st.subheader("Recent Logs")
-    if os.path.exists("strategic_log.txt"):
-        with open("strategic_log.txt", "r") as f:
+    st.subheader("Recent Logs (bot.log)")
+    log_file = "bot.log"
+    if os.path.exists(log_file):
+        with open(log_file, "r") as f:
             lines = f.readlines()
-            st.code("".join(lines[-20:])) # Show last 20 lines
+            # Filter for meaningful lines (skip empty/boring http logs if needed)
+            # For now, just show the last 50 lines to catch "EXIT CHECK"
+            st.code("".join(lines[-50:]), language='text') 
+    else:
+        st.warning(f"Log file {log_file} not found. (Is nohup running?)")
 
 elif page_mode == "Strategy Backtest":
     # Run Analysis (Cache this in a real app)
