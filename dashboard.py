@@ -150,6 +150,7 @@ elif page_mode == "Strategy Backtest":
             strats = results[selected_token]
             metrics = []
             for name, res in strats.items():
+                if name == '_debug': continue
                 metrics.append({
                     "Strategy": name,
                     "ROI %": f"{res['roi']:.2f}%"
@@ -158,6 +159,7 @@ elif page_mode == "Strategy Backtest":
             
             # Show Errors if any
             for name, res in strats.items():
+                if name == '_debug': continue
                 if 'error' in res:
                     st.error(f"⚠️ {name}: {res['error']}")
 
@@ -188,6 +190,7 @@ elif page_mode == "Strategy Backtest":
             # Plotting
             fig, ax = plt.subplots()
             for name, res in strats.items():
+                if name == '_debug': continue
                 equity = res['equity_curve']
                 if not equity.empty:
                     ax.plot(equity.index, equity, label=name)
