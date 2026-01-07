@@ -542,11 +542,19 @@ def run_job(mode="echo"):
             
             if len(pool['positions']) >= max_pos:
                 continue
+            # ALLOCATION STRATEGY (7% Risk per trade for small accounts)
+            allocation_pct = 0.07 # Increased from 0.05 to ensure >$5 min order
             
-            bet_size = pool_cash * risk_cap * multiplier
+            # Adjust allocation based on regime
+            if regime == "BULL": 
+                allocation_pct *= 1.2 # Bull market aggression
+            elif regime == "BEAR":
+                allocation_pct *= 0.5 # Bear market defense
+            
+            bet_size = pool_cash * allocation_pct * multiplier
             
             # Dust filter
-            if bet_size < 10:
+            if bet_size < 5:
                 continue
             
             # Fees
