@@ -80,6 +80,10 @@ class EchoStrategy(BaseStrategy):
             # Print heartbeat to prove we are evaluating exits
             print(f"[{datetime.now().strftime('%H:%M:%S')}] EXIT CHECK {symbol}: PnL {pnl_pct:+.2%} | Held {days_held:.1f}d | High ${highest_price:.2f}")
 
+            # --- PROLIFIC EXIT LOGGING (Deployment v1.1) ---
+            if context.get('debug', True): 
+                 print(f"  [DEBUG] Days: {days_held:.1f} | ATR: ${atr:.4f} | Peak: ${highest_price:.4f}")
+
             # --- LIFECYCLE STAGES ---
             exit_reason = None
             
@@ -88,6 +92,8 @@ class EchoStrategy(BaseStrategy):
                 # Wide Stops Only
                 hard_stop = current_pos_price * 0.90 # -10% Hard Stop
                 vol_stop = highest_price - (2.0 * atr) # Loose Trailing
+                
+                print(f"  [STAGE 1] Hard Stop: ${hard_stop:.4f} | Vol Stop: ${vol_stop:.4f} | Curr: ${price:.4f}")
                 
                 if price < hard_stop: exit_reason = f"Infancy Hard Stop (-10%)"
                 elif price < vol_stop: exit_reason = f"Infancy Vol Stop (-2 ATR)"
@@ -99,6 +105,8 @@ class EchoStrategy(BaseStrategy):
                 
                 # Tighten Stops
                 vol_stop = highest_price - (1.5 * atr)
+                print(f"  [STAGE 2] Vol Stop: ${vol_stop:.4f} | Curr: ${price:.4f}")
+
                 if price < vol_stop: exit_reason = f"Adolescence Trailing (-1.5 ATR)"
                 
                 # Take Profit?
@@ -126,8 +134,6 @@ class EchoStrategy(BaseStrategy):
                 print(f"  --> SELL SIGNAL for {symbol}: {exit_reason}")
                 return 'SELL'
             else:
-                # Log why we held (Verbose)
-                # print(f"  -> HOLDing {symbol} (No exit condition met)")
                 return 'HOLD'
 
         # --- 2. BUY LOGIC ---

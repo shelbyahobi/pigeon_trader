@@ -12,7 +12,7 @@ DEXSCREENER_SEARCH = "https://api.dexscreener.com/latest/dex/search/?q="
 HONEYPOT_API_URL = "https://api.honeypot.is/v2/IsHoneypot"
 
 # --- TRADING SETTINGS ---
-PAPER_MODE = True  # Set to True for dry-run (no real money), False for real trades
+PAPER_MODE = False  # Set to True for dry-run (no real money), False for real trades
 TRADE_AMOUNT_BNB = 0.01  # Amount to "spend" per trade
 SLIPPAGE = 10  # 10% slippage tolerance
 

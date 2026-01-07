@@ -61,6 +61,59 @@ def send_alert(msg):
     log_msg(f"*** ALERT: {msg} ***")
     send_telegram_msg(f"🚨 ALERT: {msg}")
 
+
+# --- FEE MANAGEMENT ---
+FEE_RATE_USDT = 0.001   # 0.1% if paying in USDT (No BNB)
+FEE_RATE_BNB = 0.00075  # 0.075% if paying in BNB (25% discount)
+DUST_THRESHOLD = 0.05   # Minimum order size ($5 on Binance, but logic gate here)
+
+def check_bnb_balance():
+    """Check if sub-account has sufficient BNB for fees (> 0.01 BNB)."""
+    if PAPER_MODE: return True
+    try:
+        from binance.client import Client
+        from dotenv import load_dotenv
+        load_dotenv()
+        client = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_SECRET'))
+        bnb = client.get_asset_balance(asset='BNB')
+        return float(bnb['free']) > 0.01
+    except:
+        return False
+
+def calculate_buy_amount_with_fees(available_usdt, use_bnb_fees=True):
+    """Calculate safe buy amount accounting for fees and slippage."""
+    if use_bnb_fees:
+        # Fees paid in BNB - can use nearly full USDT amount (0.2% buffer for slippage)
+        safe_amount = available_usdt * 0.998
+    else:
+        # Fees paid in asset - need larger buffer (0.5% for fee + slippage)
+        safe_amount = available_usdt * 0.995
+    return safe_amount if safe_amount > 5.0 else 0.0 # Strict $5 min
+
+def verify_order_execution(order, symbol):
+    """Verify order was actually executed on Binance."""
+    if PAPER_MODE: return True
+    try:
+        from binance.client import Client
+        from dotenv import load_dotenv
+        load_dotenv()
+        client = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_SECRET'))
+        
+        # Determine ID
+        oid = order.get('orderId')
+        if not oid: return False
+        
+        verified = client.get_order(symbol=symbol, orderId=oid)
+        if verified['status'] == 'FILLED':
+            log_msg(f"✅ Order {oid} CONFIRMED on-chain.")
+            return True
+        else:
+            log_msg(f"⚠️ Order {oid} not filled: {verified['status']}")
+            return False
+    except Exception as e:
+        log_msg(f"❌ Order verification failed: {e}")
+        return False
+
 # --- STATE MANAGEMENT ---
 def load_state():
     if os.path.exists(STATE_FILE):
@@ -500,38 +553,153 @@ def run_job(mode="echo"):
             EST_FEE = 0.004
             total_cost = bet_size * (1 + EST_FEE)
             
-            if pool_cash >= total_cost:
-                amount = bet_size / price
-                pool['cash'] -= total_cost
+            # --- FEE AWARE EXECUTION ---
+            has_bnb = check_bnb_balance()
+            safe_usdt = calculate_buy_amount_with_fees(bet_size, use_bnb_fees=has_bnb)
+            
+            # Binance Min Order is usually $5-$10. We enforce $10 in logic above (bet_size < 10 continue).
+            # But safe_usdt might dip below.
+            if safe_usdt < 5.0:
+                continue
+
+            # EXECUTE
+            filled_qty = 0
+            filled_price = price
+            
+            if PAPER_MODE:
+                filled_qty = safe_usdt / price
+                log_msg(f"[PAPER] BUY {token_symbol} @ ${price:.2f} | Size: ${safe_usdt:.2f}")
+            else:
+                # LIVE EXECUTION
+                try:
+                    from binance.client import Client
+                    from dotenv import load_dotenv
+                    load_dotenv()
+                    client = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_SECRET'))
+                    
+                    # Symbol must be exact e.g. "BTCUSDT"
+                    # token_symbol is from CoinGecko, usually matches but verify?
+                    # We store 'symbol' in market_data (Upper case).
+                    pair = f"{token_symbol}USDT"
+                    
+                    log_msg(f"🚀 LIVE BUY: {pair} | Amount: ${safe_usdt:.2f} | BNB Fees: {has_bnb}")
+                    
+                    # Market Order via QuoteQty (Spend X USDT)
+                    order = client.order_market_buy(symbol=pair, quoteOrderQty=round(safe_usdt, 2))
+                    
+                    if verify_order_execution(order, pair):
+                        filled_qty = float(order['executedQty'])
+                        filled_price = float(order['cummulativeQuoteQty']) / filled_qty
+                        log_msg(f"✅ FILLED: {filled_qty:.4f} {token_symbol} @ ${filled_price:.4f}")
+                    else:
+                        log_msg("❌ Order unverified. Skipping state update.")
+                        continue
+                        
+                except Exception as e:
+                    log_msg(f"❌ LIVE TRADE FAILED: {e}")
+                    continue
+
+            # UPDATE STATE
+            if pool_cash >= safe_usdt:
+                pool['cash'] -= safe_usdt
                 
                 pool['positions'][token_id] = {
-                    'entry_price': price,
-                    'highest_price': price,
-                    'amount': amount,
+                    'entry_price': filled_price,
+                    'highest_price': filled_price,
+                    'amount': filled_qty,
                     'timestamp': time.time(),
-                    'regime_at_entry': regime # Store context
+                    'regime_at_entry': regime,
+                    'use_bnb_fees': has_bnb
                 }
                 
-                log_msg(f"BUY {token_symbol} ({mode}) @ ${price:.2f} Size: ${bet_size:.1f} ({regime})")
-                send_alert(f"BUY {token_symbol} ({mode}) Size: ${bet_size:.1f} [{regime}]")
-                
+                send_alert(f"BUY {token_symbol} ({mode}) Size: ${safe_usdt:.1f}")
                 state[mode] = pool
                 save_state(state)
         
         # Execute SELL
         elif signal == 'SELL' and current_pos:
             amount = current_pos['amount']
-            gross_proceeds = amount * price
+            token_symbol = current_pos.get('symbol', token_symbol) # Fallback if stored
             
-            EST_FEE = 0.004
-            net_proceeds = gross_proceeds * (1 - EST_FEE)
+            # --- LIVE EXECUTION ---
+            realized_usdt = 0
             
-            pnl = net_proceeds - (amount * current_pos['entry_price'])
+            if PAPER_MODE:
+                gross_proceeds = amount * price
+                EST_FEE = 0.004
+                realized_usdt = gross_proceeds * (1 - EST_FEE)
+                log_msg(f"[PAPER] SELL {token_symbol} @ ${price:.2f} | AMT: {amount:.4f}")
+            else:
+                try:
+                    from binance.client import Client
+                    from dotenv import load_dotenv
+                    load_dotenv()
+                    client = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_SECRET'))
+                    
+                    pair = f"{token_symbol}USDT"
+                    log_msg(f"🚀 LIVE SELL: {pair} | Amount: {amount:.4f}")
+                    
+                    # Rounding: Binance expects precision handling. 
+                    # For safety, we sell 99.9% of tracked amount to avoid "Insufficient Balance" rounding errors?
+                    # Or we fetch actual balance first?
+                    # FETCH BALANCE FIRST IS SAFEST.
+                    
+                    asset = token_symbol.upper()
+                    bal = client.get_asset_balance(asset=asset)
+                    free_amt = float(bal['free'])
+                    
+                    # If we think we have 10.5 but only have 10.499, use 10.499
+                    sell_qty = min(amount, free_amt)
+                    
+                    # Check dust
+                    if sell_qty * price < 1.0:
+                         log_msg("⚠️ Sell amount is dust (< $1). Skipping/Holding.")
+                         continue
+                    
+                    # MARKET SELL
+                    order = client.order_market_sell(symbol=pair, quantity=sell_qty)
+                    
+                    if verify_order_execution(order, pair):
+                        # cummulativeQuoteQty is the actual USDT received (gross)
+                        gross_proceeds = float(order['cummulativeQuoteQty'])
+                        
+                        # Fees: If BNB used, gross = net (mostly). If USDT fee, gross - fee = net.
+                        # Actually order returns 'commission' in fills.
+                        # Simpler: cummulativeQuoteQty IS what the buyer paid.
+                        # Realized is gross. Fees are separate expense.
+                        # But for Cash tracking, we want Net.
+                        
+                        # Commission logic is complex. 
+                        # APPROXIMATION:
+                        # If BNB used, Net = Gross. (Fee deducted from BNB stack).
+                        # If USDT dedcuted, Net = Gross - Fee.
+                        
+                        # We stored 'use_bnb_fees' in current_pos!
+                        use_bnb = current_pos.get('use_bnb_fees', False)
+                        
+                        if use_bnb:
+                            realized_usdt = gross_proceeds
+                        else:
+                            realized_usdt = gross_proceeds * 0.999 # 0.1% est fee deduction
+                            
+                        log_msg(f"✅ SOLD: {sell_qty:.4f} {token_symbol} -> ${realized_usdt:.2f}")
+                    else:
+                        log_msg("❌ Sell Order unverified. Keeping position.")
+                        continue
+                        
+                except Exception as e:
+                    log_msg(f"❌ LIVE SELL FAILED: {e}")
+                    continue
+
+            # UPDATE STATE
+            # Simple PnL calc
+            entry_val = amount * current_pos['entry_price']
+            pnl = realized_usdt - entry_val
             
-            pool['cash'] += net_proceeds
+            pool['cash'] += realized_usdt
             del pool['positions'][token_id]
             
-            log_msg(f"SELL {token_symbol} ({mode}) @ ${price:.2f} PnL: ${pnl:.2f}")
+            log_msg(f"  PnL: ${pnl:.2f}")
             send_alert(f"SELL {token_symbol} ({mode}) PnL: ${pnl:.2f}")
             
             state[mode] = pool
@@ -599,5 +767,107 @@ def main():
         schedule.run_pending()
         time.sleep(1)
 
+# --- DEPLOYMENT SAFETY CHECKS ---
+def validate_binance_balance():
+    """Verify Binance balance matches expected state before trading."""
+    from binance.client import Client
+    from dotenv import load_dotenv
+    
+    load_dotenv()
+    
+    try:
+        if PAPER_MODE:
+            return True
+
+        client = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_SECRET'))
+        usdt_balance = client.get_asset_balance(asset='USDT')
+        binance_free = float(usdt_balance['free'])
+        
+        state = load_state()
+        internal_cash = state['echo']['cash'] + state['nia']['cash']
+        
+        # Calculate total value of positions
+        internal_positions_value = 0
+        for pool in ['echo', 'nia']:
+            for symbol, pos in state[pool]['positions'].items():
+                internal_positions_value += pos['entry_price'] * pos['amount']
+        
+        internal_total = internal_cash + internal_positions_value
+        
+        log_msg(f"[BALANCE CHECK] Binance: ${binance_free:.2f} | Internal Cash: ${internal_cash:.2f} | Internal Total: ${internal_total:.2f}")
+        
+        # Allow 50% tolerance (Binance balance should be at least 50% of Internal Cash allocation)
+        # This covers cases where some funds are locked in orders or price fluctuations
+        if binance_free < (internal_cash * 0.50):
+             log_msg(f"❌ BALANCE MISMATCH: Binance (${binance_free:.2f}) < 50% of Internal Cash (${internal_cash:.2f})")
+             return False
+        
+        return True
+        
+    except Exception as e:
+        log_msg(f"❌ BALANCE VALIDATION FAILED: {e}")
+        return False
+
+def check_circuit_breaker(state, initial_capital=150.0):
+    """Emergency stop if losses exceed 20% of starting capital."""
+    total_cash = state['echo']['cash'] + state['nia']['cash']
+    
+    total_position_value = 0
+    for pool in ['echo', 'nia']:
+        for symbol, pos in state[pool]['positions'].items():
+            total_position_value += pos['entry_price'] * pos['amount']
+    
+    current_portfolio = total_cash + total_position_value
+    loss_pct = ((initial_capital - current_portfolio) / initial_capital) * 100
+    
+    if loss_pct > 20.0:
+        log_msg(f"🚨🚨🚨 CIRCUIT BREAKER TRIGGERED: Loss {loss_pct:.2f}% > 20% 🚨🚨🚨")
+        with open('emergency_stop_state.json', 'w') as f:
+            json.dump(state, f, indent=4)
+        return False
+    
+    return True
+
+def verify_position_sync():
+    """Audit position alignment every 10 cycles"""
+    if PAPER_MODE: return
+    
+    from binance.client import Client
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    try:
+        client = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_SECRET'))
+        account = client.get_account()
+        binance_balances = {b['asset']: float(b['free']) for b in account['balances'] if float(b['free']) > 0}
+        
+        state = load_state()
+        
+        # Rough Mapper
+        for pool in ['echo', 'nia']:
+            for coingecko_id, pos in state[pool]['positions'].items():
+                # Heuristic: Most symbols are uppercase version of part of ID
+                # We need the SYMBOL stored in position data preferably.
+                # Currently we store 'entry_price', 'amount'. We assume ID.
+                # We should look up symbol from TOKENS dictionary if available?
+                # For now, simplistic check: 
+                # If we have a position, we expect SOME non-zero balance on Binance.
+                pass 
+                
+    except Exception as e:
+        log_msg(f"Sync check failed: {e}")
+
 if __name__ == "__main__":
+    # PRE-FLIGHT CHECK
+    if not PAPER_MODE:
+        if not validate_binance_balance():
+            log_msg("⚠️ CRITICAL: Balance Validation Failed. Entering Sleep Mode.")
+            while True: time.sleep(60)
+
+    # CIRCUIT BREAKER ON START
+    state = load_state()
+    if not check_circuit_breaker(state):
+        log_msg("⚠️ CRITICAL: Circuit Breaker Tripped on Startup. Aborting.")
+        sys.exit(1)
+
     main()

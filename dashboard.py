@@ -29,9 +29,23 @@ if page_mode == "Live Monitor":
     
     # Refresh Button
     # Refresh Button
-    if st.button("Refresh Data") or st.toggle("Auto-Refresh (10s)", value=False):
-        time.sleep(10)
+    # Auto-Refresh Logic
+    if 'last_refresh' not in st.session_state:
+        st.session_state.last_refresh = time.time()
+
+    auto_refresh = st.toggle("Auto-Refresh (30s)", value=True)
+    
+    if auto_refresh:
+        now = time.time()
+        if now - st.session_state.last_refresh > 30:
+            st.session_state.last_refresh = now
+            st.rerun()
+            
+    if st.button("Refresh Data Now"):
+        st.session_state.last_refresh = time.time()
         st.rerun()
+
+    st.caption(f"Last updated: {time.strftime('%H:%M:%S')}")
 
     # Load State
     state = load_json_safe("strategic_state.json")
