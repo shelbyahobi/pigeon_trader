@@ -63,7 +63,7 @@ def send_alert(msg):
 
 
 # --- FEE MANAGEMENT ---
-FEE_RATE_USDT = 0.001   # 0.1% if paying in USDT (No BNB)
+FEE_RATE_USDC = 0.001   # 0.1% if paying in USDC (No BNB)
 FEE_RATE_BNB = 0.00075  # 0.075% if paying in BNB (25% discount)
 DUST_THRESHOLD = 0.05   # Minimum order size ($5 on Binance, but logic gate here)
 
@@ -80,14 +80,14 @@ def check_bnb_balance():
     except:
         return False
 
-def calculate_buy_amount_with_fees(available_usdt, use_bnb_fees=True):
+def calculate_buy_amount_with_fees(available_usdc, use_bnb_fees=True):
     """Calculate safe buy amount accounting for fees and slippage."""
     if use_bnb_fees:
-        # Fees paid in BNB - can use nearly full USDT amount (0.2% buffer for slippage)
-        safe_amount = available_usdt * 0.998
+        # Fees paid in BNB - can use nearly full USDC amount (0.2% buffer for slippage)
+        safe_amount = available_usdc * 0.998
     else:
         # Fees paid in asset - need larger buffer (0.5% for fee + slippage)
-        safe_amount = available_usdt * 0.995
+        safe_amount = available_usdc * 0.995
     return safe_amount if safe_amount > 5.0 else 0.0 # Strict $5 min
 
 def verify_order_execution(order, symbol):
@@ -563,11 +563,11 @@ def run_job(mode="echo"):
             
             # --- FEE AWARE EXECUTION ---
             has_bnb = check_bnb_balance()
-            safe_usdt = calculate_buy_amount_with_fees(bet_size, use_bnb_fees=has_bnb)
+            safe_usdc = calculate_buy_amount_with_fees(bet_size, use_bnb_fees=has_bnb)
             
             # Binance Min Order is usually $5-$10. We enforce $10 in logic above (bet_size < 10 continue).
-            # But safe_usdt might dip below.
-            if safe_usdt < 5.0:
+            # But safe_usdc might dip below.
+            if safe_usdc < 5.0:
                 continue
 
             # EXECUTE
@@ -575,8 +575,8 @@ def run_job(mode="echo"):
             filled_price = price
             
             if PAPER_MODE:
-                filled_qty = safe_usdt / price
-                log_msg(f"[PAPER] BUY {token_symbol} @ ${price:.2f} | Size: ${safe_usdt:.2f}")
+                filled_qty = safe_usdc / price
+                log_msg(f"[PAPER] BUY {token_symbol} @ ${price:.2f} | Size: ${safe_usdc:.2f}")
             else:
                 # LIVE EXECUTION
                 try:
@@ -588,12 +588,12 @@ def run_job(mode="echo"):
                     # Symbol must be exact e.g. "BTCUSDT"
                     # token_symbol is from CoinGecko, usually matches but verify?
                     # We store 'symbol' in market_data (Upper case).
-                    pair = f"{token_symbol}USDT"
+                    pair = f"{token_symbol}USDC"
                     
-                    log_msg(f"🚀 LIVE BUY: {pair} | Amount: ${safe_usdt:.2f} | BNB Fees: {has_bnb}")
+                    log_msg(f"🚀 LIVE BUY: {pair} | Amount: ${safe_usdc:.2f} | BNB Fees: {has_bnb}")
                     
-                    # Market Order via QuoteQty (Spend X USDT)
-                    order = client.order_market_buy(symbol=pair, quoteOrderQty=round(safe_usdt, 2))
+                    # Market Order via QuoteQty (Spend X USDC)
+                    order = client.order_market_buy(symbol=pair, quoteOrderQty=round(safe_usdc, 2))
                     
                     if verify_order_execution(order, pair):
                         filled_qty = float(order['executedQty'])
@@ -608,8 +608,8 @@ def run_job(mode="echo"):
                     continue
 
             # UPDATE STATE
-            if pool_cash >= safe_usdt:
-                pool['cash'] -= safe_usdt
+            if pool_cash >= safe_usdc:
+                pool['cash'] -= safe_usdc
                 
                 pool['positions'][token_id] = {
                     'entry_price': filled_price,
@@ -620,7 +620,7 @@ def run_job(mode="echo"):
                     'use_bnb_fees': has_bnb
                 }
                 
-                send_alert(f"BUY {token_symbol} ({mode}) Size: ${safe_usdt:.1f}")
+                send_alert(f"BUY {token_symbol} ({mode}) Size: ${safe_usdc:.1f}")
                 state[mode] = pool
                 save_state(state)
         
@@ -630,12 +630,12 @@ def run_job(mode="echo"):
             token_symbol = current_pos.get('symbol', token_symbol) # Fallback if stored
             
             # --- LIVE EXECUTION ---
-            realized_usdt = 0
+            realized_usdc = 0
             
             if PAPER_MODE:
                 gross_proceeds = amount * price
                 EST_FEE = 0.004
-                realized_usdt = gross_proceeds * (1 - EST_FEE)
+                realized_usdc = gross_proceeds * (1 - EST_FEE)
                 log_msg(f"[PAPER] SELL {token_symbol} @ ${price:.2f} | AMT: {amount:.4f}")
             else:
                 try:
@@ -644,7 +644,7 @@ def run_job(mode="echo"):
                     load_dotenv()
                     client = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_SECRET'))
                     
-                    pair = f"{token_symbol}USDT"
+                    pair = f"{token_symbol}USDC"
                     log_msg(f"🚀 LIVE SELL: {pair} | Amount: {amount:.4f}")
                     
                     # Rounding: Binance expects precision handling. 
@@ -686,11 +686,11 @@ def run_job(mode="echo"):
                         use_bnb = current_pos.get('use_bnb_fees', False)
                         
                         if use_bnb:
-                            realized_usdt = gross_proceeds
+                            realized_usdc = gross_proceeds
                         else:
-                            realized_usdt = gross_proceeds * 0.999 # 0.1% est fee deduction
+                            realized_usdc = gross_proceeds * 0.999 # 0.1% est fee deduction
                             
-                        log_msg(f"✅ SOLD: {sell_qty:.4f} {token_symbol} -> ${realized_usdt:.2f}")
+                        log_msg(f"✅ SOLD: {sell_qty:.4f} {token_symbol} -> ${realized_usdc:.2f}")
                     else:
                         log_msg("❌ Sell Order unverified. Keeping position.")
                         continue
