@@ -788,8 +788,8 @@ def validate_binance_balance():
             return True
 
         client = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_SECRET'))
-        usdt_balance = client.get_asset_balance(asset='USDT')
-        binance_free = float(usdt_balance['free'])
+        usdc_balance = client.get_asset_balance(asset='USDC')
+        binance_free = float(usdc_balance['free'])
         
         state = load_state()
         internal_cash = state['echo']['cash'] + state['nia']['cash']
