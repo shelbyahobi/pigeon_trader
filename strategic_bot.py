@@ -702,9 +702,9 @@ def run_job(mode="echo"):
             # UPDATE STATE
             # Simple PnL calc
             entry_val = amount * current_pos['entry_price']
-            pnl = realized_usdt - entry_val
+            pnl = realized_usdc - entry_val
             
-            pool['cash'] += realized_usdt
+            pool['cash'] += realized_usdc
             del pool['positions'][token_id]
             
             log_msg(f"  PnL: ${pnl:.2f}")
