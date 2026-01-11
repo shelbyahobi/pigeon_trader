@@ -12,6 +12,9 @@ try:
     
     usdc = client.get_asset_balance(asset='USDC')
     print(f"USDC Wallet Balance: {usdc}")
+
+    uni = client.get_asset_balance(asset='UNI')
+    print(f"UNI Wallet Balance: {uni}")
     
     # Check Symbol Info (Min Notation)
     info = client.get_symbol_info('LINKUSDC')
