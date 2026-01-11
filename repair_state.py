@@ -14,21 +14,29 @@ def repair_state():
     print("--- BEFORE REPAIR ---")
     print(json.dumps(state['echo'], indent=2))
 
-    # 1. Remove Phantom LINK
+    # 1. FIX UNI (Zombie Position)
+    # User has 1.26 UNI in wallet, but bot deleted it.
+    print("Resurrecting UNI Position...")
+    state['echo']['positions']['uniswap'] = {
+        'amount': 1.26,
+        'entry_price': 5.50, # Approximate recent price
+        'highest_price': 5.54, # Restore previous high
+        'entry_timestamp': 1736450000 # Approximate timestamp (Jan 9)
+    }
+
+    # 2. FIX LINK (Already Sold)
     if 'chainlink' in state['echo']['positions']:
         print("Removing Phantom 'chainlink' position...")
         del state['echo']['positions']['chainlink']
-    else:
-        print("LINK not found in positions (?)")
 
-    # 2. Reconcile Cash
-    # Actual Binance Balance (USDC): 139.00
-    # NIA Allowance: 45.0
-    # Echo Correct Cash: 94.0
-    
-    print(f"Old Echo Cash: {state['echo']['cash']}")
+    # 3. RECONCILE CASH
+    # Total USDC in Wallet: 139.00
+    # Allowed for NIA: 45.0
+    # Left for Echo: 94.0
     state['echo']['cash'] = 94.0
-    print(f"New Echo Cash: {state['echo']['cash']}")
+    
+    print("--- AFTER REPAIR ---")
+    print(json.dumps(state['echo'], indent=2))
 
     with open(STATE_FILE, 'w') as f:
         json.dump(state, f, indent=4)
