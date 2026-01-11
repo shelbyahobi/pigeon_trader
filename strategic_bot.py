@@ -20,6 +20,7 @@ from indicators import calculate_indicators
 
 # --- GLOBAL VARIABLES ---
 TOKENS = {}
+NIA_TOKENS = {}
 TOKEN_METADATA = {}
 market_data = {}
 CANDLE_CACHE = {} # Memory cache: {token_id: (timestamp, df)}
@@ -234,63 +235,63 @@ def get_fallback_watchlist():
     ]
 
 def update_watchlist():
-    """Update TOKENS from screener"""
+    """Update TOKENS (Echo) and NIA_TOKENS (NIA) from screener"""
     log_msg("Updating watchlist...")
-    global TOKENS
+    global TOKENS, NIA_TOKENS, TOKEN_METADATA
     
     try:
-        candidates = screener.screen_candidates()
+        results = screener.screen_candidates()
+        
+        # Unpack
+        echo_list = results.get('echo', [])
+        nia_list = results.get('nia', [])
+        
+        total_found = len(echo_list) + len(nia_list)
         
         # FAILSAFE: If screener yields too few tokens, use fallback
-        # TESTING MODE (Paper=True): Force fallback if list is short (< 10) to ensure good data.
-        # PRODUCTION (Paper=False): Only fallback if list is critical (< 3).
         min_candidates = 10 if PAPER_MODE else 3
         
-        if len(candidates) < min_candidates:
-            log_msg(f"⚠️ Screener yielded only {len(candidates)} tokens (Min: {min_candidates}). Using Fallback Watchlist (20 tokens).")
-            candidates = get_fallback_watchlist()
+        if total_found < min_candidates:
+            log_msg(f"⚠️ Screener yielded only {total_found} tokens (Min: {min_candidates}). Using Fallback Watchlist (Echo only).")
+            echo_list = get_fallback_watchlist()
+            nia_list = [] # No speculative plays in fallback mode default
             
-            # Enrich Fallback with Live Metrics (1 API Call)
+            # Enrich Fallback
             try:
-                ids = ",".join([c['id'] for c in candidates])
+                ids = ",".join([c['id'] for c in echo_list])
                 url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids}&vs_currencies=usd&include_24hr_change=true"
                 r = requests.get(url, timeout=10)
                 if r.status_code == 200:
                     data = r.json()
-                    for c in candidates:
+                    for c in echo_list:
                         mid = c['id']
                         if mid in data:
-                            # 'usd_24h_change' can be positive or negative.
-                            # dip_pct is typically how much it's DOWN from high, but here 
-                            # we will use -1 * change as a proxy for "dip" if negative, or justraw change?
-                            # Dashboard expects "dip_pct" to display.
-                            # If change is -5%, dip_pct = 5.0 (Positive number representing dip depth)
                             change = data[mid].get('usd_24h_change', 0)
                             c['dip_pct'] = -change if change < 0 else 0
-                else:
-                    log_msg(f"Warning: Could not enrich fallback data (Status {r.status_code})")
             except Exception as e:
                 log_msg(f"Error enriching fallback metrics: {e}")
             
-        TOKENS = {}
-        count = 0 
-        for c in candidates:
-            token_id = c['id']
-            # Default to "echo" if tier is missing, but prioritize based on logic
-            # Echo: Large/Mid/Upper. NIA: All valid.
-            strategies = ['echo', 'nia'] # Default to both for now
-            if c.get('tier') == 'small':
-                strategies = ['nia'] # Small caps NIA only
+        TOKENS = {}     # Reset Echo
+        NIA_TOKENS = {} # Reset NIA
+        TOKEN_METADATA = {} # Reset Metadata
+
+        # Populate ECHO
+        for c in echo_list:
+            TOKENS[c['id']] = [] # Strategy state holder (Legacy format: list of strats, unused now but strict type)
+            TOKEN_METADATA[c['id']] = c
             
-            TOKENS[token_id] = strategies
-            count += 1
+        # Populate NIA
+        for c in nia_list:
+            NIA_TOKENS[c['id']] = []
+            TOKEN_METADATA[c['id']] = c # Metadata shared map (assuming unique IDs)
             
-        # SAVE WATCHLIST FOR DASHBOARD
-        with open(WATCHLIST_FILE, 'w') as f:
-            json.dump(candidates, f, indent=4)
-            
-        log_msg(f"Watchlist updated: {count} tokens")
-        send_telegram_msg(f"🦅 Watchlist Updated: {count} tokens active.")
+        log_msg(f"Watchlist updated: {len(TOKENS)} Echo tokens, {len(NIA_TOKENS)} NIA tokens")
+        
+        # Dump current whitelist to file for inspection
+        with open("watchlist.json", "w") as f:
+            # Combine for viewing
+            combined = echo_list + nia_list
+            json.dump(combined, f, indent=4)
             
     except Exception as e:
         log_msg(f"Error updating watchlist: {e}")
@@ -456,10 +457,12 @@ def run_job(mode="echo"):
         global_btc_context = fetch_btc_trend()
     
     # Fetch market data
-    token_ids = list(TOKENS.keys())
-    if not token_ids:
+    target_tokens = NIA_TOKENS if mode == 'nia' else TOKENS
+    if not target_tokens:
         log_msg(f"No tokens for {mode}")
         return
+
+    token_ids = list(target_tokens.keys())
     
     current_market_data = fetch_market_data(token_ids)
     if not current_market_data:
@@ -469,7 +472,7 @@ def run_job(mode="echo"):
     log_msg(f"Processing {len(current_market_data)} tokens")
     
     # Process tokens
-    for token_id, strategies in TOKENS.items():
+    for token_id, strategies in target_tokens.items():
         if token_id not in current_market_data:
             continue
         

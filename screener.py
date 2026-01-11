@@ -219,7 +219,7 @@ def screen_candidates():
     print(f"Found {len(valid_candidates)} candidates pre-balancing.")
     final_selection = balance_watchlist(valid_candidates)
     
-    screened_list = []
+    screened_list = {'echo': [], 'nia': []}
     
     # Now fetch details for the winners
     for coin in final_selection:
@@ -242,29 +242,46 @@ def screen_candidates():
         
         # INTELLIGENCE FIX: Trust Large/Mid Caps even if Genesis Date is missing
         # If Market Cap > $1B, it's not a rug pull.
+        # LOGIC UPGRADE: Echo (Safe) vs NIA (Risky/Expert)
         is_safe_tier = coin['tier'] in ['large', 'upper_mid', 'core_mid']
+        is_safe_age = (age_years >= MIN_AGE_YEARS) or (is_safe_tier and age_years == 0.0)
+        is_expert_match = coin.get('is_flash_crash', False)
         
-        if (age_years >= MIN_AGE_YEARS) or (is_safe_tier and age_years == 0.0):
-             # Ensure we assign a dummy age if missing, for logging
-             if age_years == 0.0: age_years = 5.0 
+        token_data = {
+            'id': coin['id'],
+            'symbol': symbol,
+            'age_years': age_years,
+            'dip_pct': coin['dip_pct'],
+            'price': coin.get('current_price', 0),
+            'is_flash_crash': is_expert_match,
+            'dev_score': details.get('developer_score', 0),
+            'comm_score': details.get('community_score', 0),
+            'liq_score': details.get('liquidity_score', 0),
+            'categories': details.get('categories', [])
+        }
+
+        # 1. Expert Matches ALWAYS go to NIA (High Volatility Plays)
+        if is_expert_match:
+             print(f"  [NIA] {symbol}: Expert Flash Crash! (Age: {age_years:.1f}y)")
+             screened_list['nia'].append(token_data)
              
-             print(f"  [PASS] {symbol}: Age {age_years:.1f}y (Tier: {coin['tier']}), Dip {coin['dip_pct']:.1f}%")
+        # 2. Safe Coins go to ECHO
+        elif is_safe_age:
+             if age_years == 0.0: age_years = 5.0 # Dummy fix for safe tier
+             token_data['age_years'] = age_years
              
-             screened_list.append({
-                'id': coin['id'],
-                'symbol': symbol,
-                'age_years': age_years,
-                'dip_pct': coin['dip_pct'],
-                'price': coin.get('current_price', 0),
-                'is_flash_crash': coin.get('is_flash_crash', False),
-                'dev_score': details.get('developer_score', 0),
-                'comm_score': details.get('community_score', 0),
-                'liq_score': details.get('liquidity_score', 0),
-                'categories': details.get('categories', [])
-            })
-             time.sleep(3)
+             print(f"  [ECHO] {symbol}: Age {age_years:.1f}y (Tier: {coin['tier']}), Dip {coin['dip_pct']:.1f}%")
+             screened_list['echo'].append(token_data)
+             
+        # 3. Young/Risky but Valid Tier go to NIA
+        elif coin['tier'] in ['lower_mid', 'small']:
+             print(f"  [NIA] {symbol}: YoungSpec play (Age: {age_years:.1f}y, Tier: {coin['tier']})")
+             screened_list['nia'].append(token_data)
+        
         else:
-            print(f"  [FAIL] {symbol}: Too young/Unknown ({age_years:.1f}y) and not High Tier")
+            print(f"  [FAIL] {symbol}: Rejected (Too young/Unknown and not suitable for NIA)")
+
+        time.sleep(3)
             
     return screened_list
 
