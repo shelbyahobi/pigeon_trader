@@ -127,6 +127,11 @@ def load_state():
                         'echo': {'cash': 700.0, 'positions': {}},
                         'nia': {'cash': 300.0, 'positions': {}}
                     }
+                # Backfill NIA if upgrading from single-strategy
+                elif 'nia' not in state:
+                    log_msg("Upgrading State: Adding NIA Pool (30% Allocation assumed vacant)")
+                    state['nia'] = {'cash': 300.0, 'positions': {}}
+                    
                 return state
         except:
             pass
@@ -740,7 +745,8 @@ def main():
     log_msg("--- BOT STARTED ---")
     
     MODE = "echo"
-    IS_FLEET = False
+    MODE = "echo" # Fallback
+    IS_FLEET = True # DEFAULT: Run both strategies
     
     if len(sys.argv) > 1:
         arg = sys.argv[1]
