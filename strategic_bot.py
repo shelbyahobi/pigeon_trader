@@ -487,7 +487,11 @@ def run_job(mode="echo"):
         
         # Fetch history with RETRY
         df_hist = fetch_candle_history_with_retry(token_id)
-        if df_hist is None or len(df_hist) < 200:
+        
+        # NIA targets (YoungSpec) often have short history. Echo requires 200d.
+        min_history = 30 if mode == 'nia' else 200
+        
+        if df_hist is None or len(df_hist) < min_history:
             continue
         
         # --- RATE LIMIT PROTECTION ---
