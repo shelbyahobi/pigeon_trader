@@ -456,10 +456,15 @@ def run_job(mode="echo"):
     global strategy
     strategy = get_strategy_for_mode(mode)
     
-    # BTC context
-    global_btc_context = True
-    if mode == 'echo':
-        global_btc_context = fetch_btc_trend()
+    # BTC context - GLOBAL SAFETY for ALL modes (Option B)
+    # Echo: Modulates risk (0.5x vs 1.5x)
+    # NIA:  Macro Stop (Don't buy knives)
+    global_btc_context = fetch_btc_trend()
+    
+    # Init Cooldown Tracker if missing
+    global SOLD_HISTORY
+    if 'SOLD_HISTORY' not in globals():
+        SOLD_HISTORY = {}
     
     # Fetch market data
     target_tokens = NIA_TOKENS if mode == 'nia' else TOKENS
@@ -480,8 +485,18 @@ def run_job(mode="echo"):
     for token_id, strategies in target_tokens.items():
         if token_id not in current_market_data:
             continue
-        
+            
         token_symbol = current_market_data[token_id]['symbol']
+        
+        # COOLDOWN CHECK (24h)
+        if token_symbol in SOLD_HISTORY:
+            last_sold = SOLD_HISTORY[token_symbol]
+            if (time.time() - last_sold) < 86400: # 24 hours
+                # Silent skip to avoid log spam, or debug log
+                # log_msg(f"⏳ Cooldown: {token_symbol}")
+                continue
+            else:
+                del SOLD_HISTORY[token_symbol] # Expired
         
         price = current_market_data[token_id]['price']
         
@@ -718,6 +733,9 @@ def run_job(mode="echo"):
             
             pool['cash'] += realized_usdc
             del pool['positions'][token_id]
+            
+            # Record Sell for Cooldown
+            SOLD_HISTORY[token_symbol] = time.time()
             
             log_msg(f"  PnL: ${pnl:.2f}")
             send_alert(f"SELL {token_symbol} ({mode}) PnL: ${pnl:.2f}")
