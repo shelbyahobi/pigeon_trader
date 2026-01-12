@@ -341,27 +341,40 @@ def update_watchlist():
 
 # --- MARKET DATA ---
 def fetch_market_data(token_ids):
-    """Fetch current price/ATH for list of tokens"""
+    """Fetch current price/ATH for list of tokens with Retry"""
     ids_str = ",".join(token_ids)
     url = "https://api.coingecko.com/api/v3/coins/markets"
     params = {'vs_currency': 'usd', 'ids': ids_str}
     
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        data = response.json()
-        
-        market_map = {}
-        if isinstance(data, list):
-            for item in data:
-                market_map[item['id']] = {
-                    'price': item['current_price'],
-                    'ath': item['ath'],
-                    'symbol': item['symbol'].upper()
-                }
-        return market_map
-    except Exception as e:
-        log_msg(f"Error fetching market data: {e}")
-        return None
+    retries = 3
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, params=params, timeout=15)
+            
+            if response.status_code == 429:
+                log_msg(f"Wait... API Rate Limit (Attempt {attempt+1})")
+                time.sleep(60 * (attempt + 1)) # Backoff: 60s, 120s, 180s
+                continue
+                
+            data = response.json()
+            
+            market_map = {}
+            if isinstance(data, list):
+                for item in data:
+                    market_map[item['id']] = {
+                        'price': item['current_price'],
+                        'ath': item['ath'],
+                        'symbol': item['symbol'].upper()
+                    }
+                return market_map
+            else:
+                log_msg(f"API Error: {data}")
+                
+        except Exception as e:
+            log_msg(f"Error fetching market data: {e}")
+            time.sleep(10)
+            
+    return None
 
 # ... (skip to fetch_candle_history) ...
 
@@ -756,9 +769,10 @@ def run_fleet():
     run_job(mode="echo")
     
     # Hotfix 3: Inter-Strategy Buffer
-    # Echo uses API calls. Give CoinGecko 30s to recover before NIA runs.
-    log_msg("Buffer: Sleeping 30s before NIA...")
-    time.sleep(30)
+    # Hotfix 3: Inter-Strategy Buffer (Stabilization)
+    # Echo uses API calls. Give CoinGecko 90s to recover quota.
+    log_msg("Buffer: Sleeping 90s before NIA to refill API quota...")
+    time.sleep(90)
     
     run_job(mode="nia")
     log_msg(">>> FLEET COMPLETE <<<")
