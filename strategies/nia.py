@@ -48,7 +48,13 @@ class NIAStrategy(BaseStrategy):
         """
         NIA Signal Logic
         """
-        # Allow very short history for young speculative plays
+        # EXPERT BYPASS (Top Priority)
+        # If Screener identified valid Flash Crash, we BUY immediately regardless of history length.
+        if context.get('is_flash_crash', False):
+             print(f"  [NIA] BUYING FLASH CRASH: {context.get('symbol')}")
+             return 'BUY'
+
+        # Allow very short history for young speculative plays, but require SOME data
         if len(df) < 20: return 'HOLD'
         
         df = self.calculate_indicators(df.copy())
