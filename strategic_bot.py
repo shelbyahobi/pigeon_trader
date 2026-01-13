@@ -593,7 +593,18 @@ def run_job(mode="echo"):
             
             bet_size = pool_cash * allocation_pct * multiplier
             
-            # Dust filter
+            # SMALL ACCOUNT BOOSTER
+            # If bet < $11 (Binance Min), boost it if we have cash.
+            MIN_TRADE = 11.0 
+            if bet_size < MIN_TRADE:
+                if pool_cash >= MIN_TRADE:
+                    bet_size = MIN_TRADE # Force minimum trade
+                else:
+                    # Not enough cash for even a min trade
+                    # log_msg(f"Skipping {token_symbol}: Insufficient Cash (${pool_cash:.2f}) for min trade (${MIN_TRADE})")
+                    continue
+            
+            # Dust filter (Redundant now but safe)
             if bet_size < 5:
                 continue
             
