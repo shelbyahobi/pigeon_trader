@@ -655,6 +655,11 @@ def run_job(mode="echo"):
                         continue
                         
                 except Exception as e:
+                    # Handle "Invalid Symbol" (Not on Binance) explicitly
+                    if "Invalid symbol" in str(e) or '"code":-1121' in str(e):
+                        log_msg(f"⚠️ Skipped {token_symbol}: Pair {pair} not found on Binance.")
+                        continue
+                    
                     log_msg(f"❌ LIVE TRADE FAILED: {e}")
                     continue
 
