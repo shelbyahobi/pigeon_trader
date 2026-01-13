@@ -94,7 +94,13 @@ class NIAStrategy(BaseStrategy):
             # 1. NON-PRICE DISCOVERY
             # Signal 1: Dev Score > 50 (CoinGecko)
             dev_score = context.get('dev_score', 0)
-            if dev_score < 50: return 'HOLD'
+            age = context.get('age_years', 5.0) # Default to old if missing
+            
+            # NIA Logic Update: New coins often have 0 Dev Score (No GitHub tracking yet)
+            # If Young (< 2y), we ignore Dev Score.
+            min_dev = 50 if age >= 2.0 else 0
+            
+            if dev_score < min_dev: return 'HOLD'
             
             # Signal 3: Narratice Compressibility
             categories = context.get('categories', [])
