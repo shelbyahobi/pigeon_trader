@@ -119,10 +119,16 @@ class NIAStrategy(BaseStrategy):
             
             if is_deep and is_quiet and is_organic:
                 # Composite Trigger
-                # WITHOUT Fake Spread Data:
-                # We rely on Dev Score being "High enough" to differentiate.
-                # If Dev Score > 60 -> BUY.
-                if dev_score > 60:
+                # Logic: Old coins need Devs (>60). Young coins need nothing (Pure Speculation).
+                
+                trigger_dev_score = 60 if age >= 2.0 else 0
+                
+                if dev_score >= trigger_dev_score:
+                     if age < 2.0:
+                         print(f"  [NIA] BUYING YOUNGSPEC: {context.get('symbol')} (Deep+Quiet+Organic)")
+                     else:
+                         print(f"  [NIA] BUYING ACCUMULATION: {context.get('symbol')} (Devs+Deep+Quiet)")
+                         
                      return 'BUY'
                 
         return 'HOLD'
