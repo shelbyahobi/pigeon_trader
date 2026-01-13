@@ -22,20 +22,28 @@ def check_watchlist():
         tier = c.get('tier', 'n/a')
         
         # Determine likely pool (Echo/NIA) based on flags
-        # This mirrors Screener logic logic but simplified for display
         is_flash = c.get('is_flash_crash', False)
         age = c.get('age_years', 0)
+        mode = c.get('mode', 'unknown')
         
-        # Inferred Type
+        # Display Logic
         if is_flash:
             act = "NIA⚡"
             note = "FLASH CRASH"
-        elif age < 2.0 and tier in ['small', 'lower_mid']:
+        elif mode == 'nia':
             act = "NIA👶"
-            note = "YoungSpec"
-        else:
+            note = f"YoungSpec ({tier})"
+        elif mode == 'echo':
             act = "ECHO🛡️"
             note = f"Age {age:.1f}y"
+        else:
+            # Fallback for old watchlist.json files
+            if age < 2.0 and tier in ['small', 'lower_mid']:
+                act = "NIA👶"
+                note = "YoungSpec"
+            else:
+                act = "ECHO🛡️"
+                note = f"Age {age:.1f}y" # Assumed
             
         print(f"{symbol:<10} {tier:<12} {act:<6} {note}")
         

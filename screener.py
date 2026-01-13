@@ -257,24 +257,28 @@ def screen_candidates():
             'dev_score': details.get('developer_score', 0),
             'comm_score': details.get('community_score', 0),
             'liq_score': details.get('liquidity_score', 0),
-            'categories': details.get('categories', [])
+            'categories': details.get('categories', []),
+            'tier': coin['tier'] # Persist Tier
         }
 
         # 1. Expert Matches ALWAYS go to NIA (High Volatility Plays)
         if is_expert_match:
              print(f"  [NIA] {symbol}: Expert Flash Crash! (Age: {age_years:.1f}y)")
+             token_data['mode'] = 'nia'
              screened_list['nia'].append(token_data)
              
         # 2. Safe Coins go to ECHO
         elif is_safe_age:
              if age_years == 0.0: age_years = 5.0 # Dummy fix for safe tier
              token_data['age_years'] = age_years
+             token_data['mode'] = 'echo'
              
              print(f"  [ECHO] {symbol}: Age {age_years:.1f}y (Tier: {coin['tier']}), Dip {coin['dip_pct']:.1f}%")
              screened_list['echo'].append(token_data)
              
         # 3. Young/Risky but Valid Tier go to NIA
         elif coin['tier'] in ['lower_mid', 'small']:
+             token_data['mode'] = 'nia'
              print(f"  [NIA] {symbol}: YoungSpec play (Age: {age_years:.1f}y, Tier: {coin['tier']})")
              screened_list['nia'].append(token_data)
         
